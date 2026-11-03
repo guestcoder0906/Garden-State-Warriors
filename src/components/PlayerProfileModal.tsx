@@ -94,7 +94,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
 
               <div className="bg-[#142019] border border-white/10 rounded-xl px-4 py-2.5 flex items-center">
                 <div>
-                  <span className="text-[11px] text-neutral-400 block">Rank & Roster Tab</span>
+                  <span className="text-[11px] text-neutral-400 block">Position</span>
                   <span className="text-sm font-semibold text-white font-mono-tabular">
                     {[player.rank && `Position: ${player.rank}`, player.tierTab]
                       .filter(Boolean)
