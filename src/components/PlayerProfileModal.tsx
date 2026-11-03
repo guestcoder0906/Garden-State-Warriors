@@ -96,7 +96,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                 <div>
                   <span className="text-[11px] text-neutral-400 block">Rank & Roster Tab</span>
                   <span className="text-sm font-semibold text-white font-mono-tabular">
-                    {[player.rank && `Rank: ${player.rank}`, player.tierTab]
+                    {[player.rank && `Position: ${player.rank}`, player.tierTab]
                       .filter(Boolean)
                       .join(' · ') || 'Veterans Roster'}
                   </span>
