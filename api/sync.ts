@@ -1,0 +1,141 @@
+const DEFAULT_SPREADSHEET_ID = '1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s';
+
+async function fetchGvizSheetTab(
+  spreadsheetId: string,
+  sheetName?: string
+): Promise<string[][] | null> {
+  try {
+    const sheetParam = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : '';
+    const gvizUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(
+      spreadsheetId
+    )}/gviz/tq?tqx=out:json${sheetParam}&_t=${Date.now()}`;
+    const gvizRes = await fetch(gvizUrl, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+    });
+    if (!gvizRes.ok) return null;
+    const text = await gvizRes.text();
+    const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
+    if (!match || !match[1]) return null;
+    const json = JSON.parse(match[1]);
+    if (json.status === 'error') return null;
+
+    const cols: string[] = (json.table?.cols || []).map((c: any) => c?.label || '');
+    const rows: string[][] = (json.table?.rows || []).map((r: any) =>
+      (r?.c || []).map((cell: any) =>
+        cell && cell.v !== null && cell.v !== undefined ? String(cell.f ?? cell.v) : ''
+      )
+    );
+    return cols.some(Boolean) ? [cols, ...rows] : rows;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Serverless Sync Endpoint for Vercel (/api/sync).
+ * Reads the verified Google Sheet (`1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s`)
+ * via either the deployed Google Apps Script Web App URL or Google Sheets public JSON visualization endpoint.
+ */
+export default async function handler(req: any, res: any) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  const appsScriptUrl =
+    process.env.VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL ||
+    process.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
+    '';
+  const spreadsheetId =
+    process.env.VITE_GOOGLE_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID;
+
+  try {
+    // 1. Try Google Apps Script Web App URL if configured
+    if (
+      appsScriptUrl &&
+      appsScriptUrl.startsWith('https://script.google.com/') &&
+      !appsScriptUrl.includes('YOUR_')
+    ) {
+      const separator = appsScriptUrl.includes('?') ? '&' : '?';
+      const r = await fetch(`${appsScriptUrl}${separator}_t=${Date.now()}`, {
+        headers: {
+          Accept: 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      });
+      if (r.ok) {
+        const payload = await r.json();
+        return res.status(200).json(payload);
+      }
+    }
+
+    // 2. Fallback: Fetch the main Roster tab plus optional Events, Board, Coaches, Fans, and Sponsors tabs in parallel
+    const [rosterRows, eventsRows, boardRows, coachesRows, fansRows, sponsorsRows] = await Promise.all([
+      fetchGvizSheetTab(spreadsheetId),
+      fetchGvizSheetTab(spreadsheetId, 'Events'),
+      fetchGvizSheetTab(spreadsheetId, 'Board'),
+      fetchGvizSheetTab(spreadsheetId, 'Coaches'),
+      fetchGvizSheetTab(spreadsheetId, 'Fans'),
+      fetchGvizSheetTab(spreadsheetId, 'Sponsors'),
+    ]);
+
+    const sheets: Record<string, string[][]> = {};
+    if (rosterRows && rosterRows.length > 0) {
+      sheets.Roster = rosterRows;
+    }
+    if (
+      eventsRows &&
+      eventsRows.length > 0 &&
+      JSON.stringify(eventsRows[0]) !== JSON.stringify(rosterRows?.[0])
+    ) {
+      sheets.Events = eventsRows;
+    }
+    if (
+      boardRows &&
+      boardRows.length > 0 &&
+      JSON.stringify(boardRows[0]) !== JSON.stringify(rosterRows?.[0])
+    ) {
+      sheets.Board = boardRows;
+    }
+    if (
+      coachesRows &&
+      coachesRows.length > 0 &&
+      JSON.stringify(coachesRows[0]) !== JSON.stringify(rosterRows?.[0])
+    ) {
+      sheets.Coaches = coachesRows;
+    }
+    if (
+      fansRows &&
+      fansRows.length > 0 &&
+      JSON.stringify(fansRows[0]) !== JSON.stringify(rosterRows?.[0])
+    ) {
+      sheets.Fans = fansRows;
+    }
+    if (
+      sponsorsRows &&
+      sponsorsRows.length > 0 &&
+      JSON.stringify(sponsorsRows[0]) !== JSON.stringify(rosterRows?.[0])
+    ) {
+      sheets.Sponsors = sponsorsRows;
+    }
+
+    if (Object.keys(sheets).length > 0) {
+      return res.status(200).json({
+        ok: true,
+        title: 'Garden State Warriors Roster',
+        tabs: Object.keys(sheets),
+        sheets,
+      });
+    }
+  } catch {
+    // Silent fallback when sheet is private or empty
+  }
+
+  return res.status(200).json({
+    ok: true,
+    empty: true,
+    sheets: {},
+  });
+}
