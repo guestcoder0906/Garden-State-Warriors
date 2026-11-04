@@ -1,6 +1,6 @@
 {
   "name": "Garden State Warriors Hockey Club",
-  "description": "Official serverless website for Garden State Warriors Disabled Veterans Hockey Club Inc., a 501(c)(3) tax-exempt public charity, featuring live Google Sheets & Forms roster sync, player profiles, events, and Supabase integration.",
+  "description": "Veteran Hockey, run by veterans. Garden State Warriors Veterans Hockey Club Inc. is a registered 501(c)(3) tax-exempt public charity in New Jersey.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
