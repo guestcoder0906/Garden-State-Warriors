@@ -267,9 +267,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   <h3 className="text-sm font-bold text-[#EF4444] font-display uppercase tracking-wider mb-1.5">
                     What the Warriors Means to Them
                   </h3>
-                  <p className="text-sm text-neutral-200 leading-relaxed italic">
+                  <q className="text-sm text-neutral-200 leading-relaxed italic">
                     {player.whatWarriorsMeans}
-                  </p>
+                  </q>
                 </div>
               )}
             </div>

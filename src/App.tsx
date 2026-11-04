@@ -1193,9 +1193,9 @@ export default function App() {
                             </div>
 
                             {testimonyPlayer.whatWarriorsMeans && (
-                              <p className="text-xs text-neutral-300 italic leading-relaxed font-mono-tabular">
+                              <q className="text-xs text-neutral-300 italic leading-relaxed font-mono-tabular">
                                 {testimonyPlayer.whatWarriorsMeans}
-                              </p>
+                              </q>
                             )}
                           </div>
 
