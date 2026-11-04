@@ -1269,7 +1269,7 @@ export default function App() {
                                 : 'bg-[#070C09] text-neutral-300 hover:text-white'
                             }`}
                           >
-                            {rk === 'All' ? 'All Ranks' : rk}
+                            {rk === 'All' ? 'All Positions' : rk}
                           </button>
                         ))}
                       </div>
