@@ -1214,7 +1214,7 @@ export default function App() {
                         Auto-Updated from Google Sheets
                       </span>
                       <h2 className="text-2xl font-bold text-white font-display uppercase mt-0.5">
-                        Roster & Rank Tabs ({filteredPlayers.length})
+                        Roster & Position Tabs ({filteredPlayers.length})
                       </h2>
                     </div>
 
@@ -1224,7 +1224,7 @@ export default function App() {
                         type="text"
                         value={playerSearchQuery}
                         onChange={(e) => setPlayerSearchQuery(e.target.value)}
-                        placeholder="Search player, #number, rank..."
+                        placeholder="Search player, #number, position..."
                         aria-label="Search players"
                         className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-[#0D1611] border border-white/15 text-xs text-white focus:border-[#EAB308] focus:outline-none"
                       />
@@ -1256,7 +1256,7 @@ export default function App() {
                     {availableRanks.length > 1 && (
                       <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-white/10">
                         <span className="text-[11px] text-neutral-400 font-mono-tabular mr-1.5">
-                          Ranks:
+                          Positions:
                         </span>
                         {availableRanks.map((rk) => (
                           <button
