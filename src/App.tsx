@@ -64,21 +64,15 @@ export default function App() {
   const [autoPlaySlides, setAutoPlaySlides] = useState(true);
 
   // Verified Roster, Staff, Fans, Sponsors & Events State
-  // Defaults to Temporary Placeholders when the Google Sheet is empty, and replaces them automatically when rows exist
-  const [players, setPlayers] = useState<PlayerProfile[]>(INITIAL_PLAYERS);
-  const [staff, setStaff] = useState<StaffMember[]>(INITIAL_BOARD_AND_STAFF);
-  const [fans, setFans] = useState<FanItem[]>(INITIAL_FANS);
-  const [sponsors, setSponsors] = useState<SponsorItem[]>(INITIAL_SPONSORS);
-  const [events, setEvents] = useState<ClubEvent[]>(INITIAL_EVENTS);
-  const [dynamicTabs, setDynamicTabs] = useState<string[]>([
-    'Captains',
-    'Alpha',
-    'Bravo',
-    'Charlie',
-    'Veterans Roster',
-  ]);
+  // Starts empty and updates directly from Google Sheets so empty tabs/cells are not rendered while empty
+  const [players, setPlayers] = useState<PlayerProfile[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [fans, setFans] = useState<FanItem[]>([]);
+  const [sponsors, setSponsors] = useState<SponsorItem[]>([]);
+  const [events, setEvents] = useState<ClubEvent[]>([]);
+  const [dynamicTabs, setDynamicTabs] = useState<string[]>([]);
 
-  // Players Filtering State (Rank tabs, Tier tabs, Search)
+  // Players Filtering State (Position/Rank tabs, Tier tabs, Search)
   const [selectedTierTab, setSelectedTierTab] = useState<string>('All');
   const [selectedRankFilter, setSelectedRankFilter] = useState<string>('All');
   const [playerSearchQuery, setPlayerSearchQuery] = useState<string>('');
@@ -100,25 +94,12 @@ export default function App() {
     const runSync = async () => {
       const sheetData = await syncVerifiedGoogleSheet();
       if (mounted && sheetData) {
-        // If sheet has rows, show live entries; if a section in the sheet is empty, show temporary placeholders
-        setPlayers(
-          sheetData.players.length > 0 ? sheetData.players : INITIAL_PLAYERS
-        );
-        setStaff(
-          sheetData.staff.length > 0 ? sheetData.staff : INITIAL_BOARD_AND_STAFF
-        );
-        setEvents(
-          sheetData.events.length > 0 ? sheetData.events : INITIAL_EVENTS
-        );
-        setFans(
-          sheetData.fans && sheetData.fans.length > 0 ? sheetData.fans : INITIAL_FANS
-        );
-        setSponsors(
-          sheetData.sponsors && sheetData.sponsors.length > 0 ? sheetData.sponsors : INITIAL_SPONSORS
-        );
-        if (sheetData.detectedTabs.length > 0) {
-          setDynamicTabs(sheetData.detectedTabs);
-        }
+        setPlayers(sheetData.players);
+        setStaff(sheetData.staff);
+        setEvents(sheetData.events);
+        setFans(sheetData.fans || []);
+        setSponsors(sheetData.sponsors || []);
+        setDynamicTabs(sheetData.detectedTabs);
       }
 
       if (isSupabaseConfigured()) {
@@ -155,12 +136,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, [autoPlaySlides, activeSection]);
 
-  // Unique Military Ranks dynamically derived from current roster (only non-empty ranks)
+  // Unique Positions / Ranks dynamically derived from current roster (only non-empty cells)
   const availableRanks = useMemo(() => {
-    const ranks = Array.from(
-      new Set(players.map((p) => (p.rank || '').trim()).filter(Boolean))
+    const vals = Array.from(
+      new Set(
+        players
+          .flatMap((p) => [(p.position || '').trim(), (p.rank || '').trim()])
+          .filter(Boolean)
+      )
     );
-    return ['All', ...ranks];
+    return vals.length > 0 ? ['All', ...vals] : [];
   }, [players]);
 
   const filteredPlayers = useMemo(() => {
@@ -171,28 +156,26 @@ export default function App() {
     });
   }, [players, selectedTierTab, selectedRankFilter, playerSearchQuery]);
 
-  // 4 Captains & 3 Testimonies
+  // Captains & Testimonies (Only non-empty sheet entries)
   const fourCaptains = useMemo(() => {
-    const caps = players.filter(
+    return players.filter(
       (p) =>
         p.roleBadge === 'Captain' ||
         p.roleBadge === 'Alternate Captain' ||
-        p.tierTab === 'Captains'
+        /^captains?$/i.test(p.tierTab || '')
     );
-    return (caps.length > 0 ? caps : players).slice(0, 4);
   }, [players]);
 
   const threeTestimonies = useMemo(() => {
-    const featured = players.filter((p) => p.isTestimonyFeatured);
-    return (featured.length >= 3 ? featured : players).slice(0, 3);
+    return players.filter((p) => Boolean(p.whatWarriorsMeans && p.whatWarriorsMeans.trim()));
   }, [players]);
 
   const boardMembers = useMemo(
-    () => staff.filter((s) => s.category === 'Board').slice(0, 4),
+    () => staff.filter((s) => s.category === 'Board'),
     [staff]
   );
   const coaches = useMemo(
-    () => staff.filter((s) => s.category === 'Coach').slice(0, 2),
+    () => staff.filter((s) => s.category === 'Coach'),
     [staff]
   );
 
@@ -818,53 +801,68 @@ export default function App() {
               </div>
             </section>
 
-            {/* AT BOTTOM OF HOME PAGE: THANKS SPONSORS AND SUPPORTERS (LISTED) */}
-            <section
-              aria-label="Sponsors and Supporters"
-              className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 sm:p-8 space-y-5"
-            >
-              <div className="text-center max-w-xl mx-auto space-y-1.5">
-                <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
-                  501(c)(3) Partners
-                </span>
-                <h2 className="text-2xl sm:text-3xl font-bold text-white font-display uppercase">
-                  Thanks Sponsors and Supporters
-                </h2>
-              </div>
+            {/* AT BOTTOM OF HOME PAGE: THANKS SPONSORS AND SUPPORTERS (Only rendered when Sponsors tab has rows) */}
+            {sponsors.length > 0 && (
+              <section
+                aria-label="Sponsors and Supporters"
+                className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 sm:p-8 space-y-5"
+              >
+                <div className="text-center max-w-xl mx-auto space-y-1.5">
+                  <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
+                    501(c)(3) Partners
+                  </span>
+                  <h2 className="text-2xl sm:text-3xl font-bold text-white font-display uppercase">
+                    Thanks Sponsors and Supporters
+                  </h2>
+                </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {sponsors.map((sp) => (
-                  <div
-                    key={sp.id}
-                    className="bg-[#080E0B] border border-white/[0.08] rounded-xl p-5 flex flex-col justify-between gap-3"
-                  >
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-mono-tabular text-[#EAB308]">
-                        {sp.tier}
-                      </span>
-                      <h3 className="text-lg font-bold text-white font-display uppercase">
-                        {sp.name}
-                      </h3>
-                      <p className="text-xs text-neutral-300 leading-relaxed font-mono-tabular">
-                        {sp.description}
-                      </p>
-                    </div>
-                    {sp.logoUrl && !sp.logoUrl.startsWith('[') ? (
-                      <img
-                        src={sp.logoUrl}
-                        alt={sp.name}
-                        className="h-14 w-auto object-contain rounded bg-black/40 p-2 border border-white/10"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="p-2 rounded bg-black/40 border border-[#EAB308]/25 text-[11px] text-amber-200/90 font-mono-tabular">
-                        {sp.placeholderNote}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {sponsors.map((sp) => (
+                    <div
+                      key={sp.id}
+                      className="bg-[#080E0B] border border-white/[0.08] rounded-xl p-5 flex flex-col justify-between gap-3"
+                    >
+                      <div className="space-y-1.5">
+                        {sp.tier && (
+                          <span className="text-[11px] font-mono-tabular text-[#EAB308]">
+                            {sp.tier}
+                          </span>
+                        )}
+                        {sp.name && (
+                          <h3 className="text-lg font-bold text-white font-display uppercase">
+                            {sp.name}
+                          </h3>
+                        )}
+                        {sp.description && (
+                          <p className="text-xs text-neutral-300 leading-relaxed font-mono-tabular">
+                            {sp.description}
+                          </p>
+                        )}
+                        {sp.website && (
+                          <a
+                            href={sp.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-[#EAB308] hover:underline pt-1"
+                          >
+                            <span>Visit Website</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </section>
+                      {sp.logoUrl && (
+                        <img
+                          src={sp.logoUrl}
+                          alt={sp.name || 'Sponsor Logo'}
+                          className="h-14 w-auto object-contain rounded bg-black/40 p-2 border border-white/10"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
 
@@ -948,409 +946,444 @@ export default function App() {
             )}
 
             {/* ---------------------------------------------------------------
-                ABOUT SUB-TAB 2: BOARD AND STAFF (4 Board + 2 Coaches)
+                ABOUT SUB-TAB 2: BOARD AND STAFF (Only renders non-empty sections & cells)
                --------------------------------------------------------------- */}
             {aboutSubTab === 'board-staff' && (
               <div className="space-y-10">
-                {/* 4 Board Officers: President, Vice President, Secretary, Treasurer */}
-                <section className="space-y-5">
-                  <div className="text-center max-w-xl mx-auto space-y-1">
-                    <h2 className="text-2xl sm:text-3xl font-extrabold text-[#EAB308] font-display uppercase tracking-wide">
-                      Board of Directors
-                    </h2>
-                    <p className="text-xs sm:text-sm text-neutral-300">
-                      President, Vice President, Secretary, and Treasurer.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                    {boardMembers.map((member) => (
-                      <div
-                        key={member.id}
-                        className="bg-[#0D1611] border border-white/10 rounded-2xl overflow-hidden flex flex-col justify-between"
-                      >
-                        <div className="aspect-square bg-gradient-to-b from-[#17281E] to-[#080E0B] p-5 flex flex-col items-center justify-center text-center relative">
-                          {member.photoUrl ? (
-                            <img
-                              src={member.photoUrl}
-                              alt={member.role}
-                              className="w-full h-full object-cover"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <>
-                              <img
-                                src={TEAM_LOGOS.greenGoldCrest}
-                                alt={member.role}
-                                className="w-16 h-16 object-contain mb-3"
-                                referrerPolicy="no-referrer"
-                              />
-                              <span className="text-xs font-bold text-[#EAB308] font-mono-tabular uppercase">
-                                {member.role}
-                              </span>
-                              <span className="mt-2 text-[10px] text-amber-200/90 font-mono-tabular bg-black/50 p-1.5 rounded border border-[#EAB308]/30">
-                                {member.photoPlaceholder}
-                              </span>
-                            </>
-                          )}
-                        </div>
-
-                        <div className="p-4 text-center space-y-1.5 border-t border-white/10 bg-[#0A110D]">
-                          <span className="text-xs font-bold text-[#EAB308] uppercase font-display tracking-wider block">
-                            {member.role}
-                          </span>
-                          <h3 className="text-xs font-bold text-white font-mono-tabular">
-                            {member.name}
-                          </h3>
-                          <p className="text-[11px] text-neutral-300 leading-relaxed pt-1 font-mono-tabular">
-                            {member.caption}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* 2 Coaches */}
-                <section className="space-y-5 pt-4 border-t border-white/10">
-                  <div className="text-center max-w-xl mx-auto space-y-1">
-                    <h2 className="text-2xl sm:text-3xl font-extrabold text-[#EF4444] font-display uppercase tracking-wide">
-                      Coaches
-                    </h2>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl mx-auto">
-                    {coaches.map((coach) => (
-                      <div
-                        key={coach.id}
-                        className="bg-[#0D1611] border border-white/10 rounded-2xl overflow-hidden flex flex-col justify-between"
-                      >
-                        <div className="aspect-square bg-gradient-to-b from-[#6B1414]/60 to-[#080E0B] p-5 flex flex-col items-center justify-center text-center">
-                          {coach.photoUrl ? (
-                            <img
-                              src={coach.photoUrl}
-                              alt={coach.role}
-                              className="w-full h-full object-cover"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <>
-                              <img
-                                src={TEAM_LOGOS.redNjStickCrest}
-                                alt={coach.role}
-                                className="w-16 h-16 object-contain rounded-full mb-3"
-                                referrerPolicy="no-referrer"
-                              />
-                              <span className="text-xs font-bold text-white font-mono-tabular uppercase">
-                                {coach.role}
-                              </span>
-                              <span className="mt-2 text-[10px] text-amber-200/90 font-mono-tabular bg-black/50 p-1.5 rounded border border-[#EAB308]/30">
-                                {coach.photoPlaceholder}
-                              </span>
-                            </>
-                          )}
-                        </div>
-
-                        <div className="p-4 text-center space-y-1.5 border-t border-white/10 bg-[#0A110D]">
-                          <span className="text-xs font-bold text-red-300 uppercase font-display tracking-wider block">
-                            {coach.role}
-                          </span>
-                          <h3 className="text-xs font-bold text-white font-mono-tabular">
-                            {coach.name}
-                          </h3>
-                          <p className="text-[11px] text-neutral-300 leading-relaxed pt-1 font-mono-tabular">
-                            {coach.caption}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </div>
-            )}
-
-            {/* ---------------------------------------------------------------
-                ABOUT SUB-TAB 3: PLAYERS (4 Captains + 3 Testimonies + Dynamic Sheet Tabs)
-               --------------------------------------------------------------- */}
-            {aboutSubTab === 'players' && (
-              <div className="space-y-12">
-                {/* Part A: 4 Captains */}
-                <section className="space-y-5">
-                  <div className="border-b border-white/10 pb-3">
-                    <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
-                      4 Captains
-                    </span>
-                    <h2 className="text-2xl font-bold text-white font-display uppercase mt-0.5">
-                      Team Captains
-                    </h2>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {fourCaptains.map((cap) => (
-                      <div
-                        key={cap.id}
-                        className="bg-[#0D1611] border border-white/10 hover:border-[#EAB308]/40 rounded-2xl overflow-hidden flex flex-col justify-between transition-colors"
-                      >
-                        <div>
-                          <div className="aspect-square bg-gradient-to-br from-[#7F1D1D]/55 via-[#132219] to-[#080E0B] p-4 flex flex-col items-center justify-center text-center">
-                            {cap.jerseyPhotoUrl ? (
-                              <img
-                                src={cap.jerseyPhotoUrl}
-                                alt={cap.name}
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              <>
-                                <img
-                                  src={TEAM_LOGOS.redNjStickCrest}
-                                  alt={cap.name}
-                                  className="w-16 h-16 object-contain rounded-full mb-2.5"
-                                  referrerPolicy="no-referrer"
-                                />
-                                <span className="text-xs font-bold text-[#EAB308] font-mono-tabular uppercase">
-                                  {cap.roleBadge || 'Captain'}
-                                  {cap.jerseyNumber ? ` · #${cap.jerseyNumber}` : ''}
-                                </span>
-                                <span className="mt-2 text-[10px] text-amber-200/90 font-mono-tabular bg-black/50 p-1.5 rounded border border-[#EAB308]/30">
-                                  {cap.jerseyPhotoPlaceholder}
-                                </span>
-                              </>
-                            )}
-                          </div>
-
-                          <div className="p-4 space-y-1.5">
-                            <h3 className="text-sm font-bold text-white font-display uppercase">
-                              {cap.name}
-                            </h3>
-                            <p className="text-xs text-neutral-300 leading-relaxed font-mono-tabular">
-                              {cap.shortCaption}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="px-4 py-3 border-t border-white/10 bg-[#0A110D] flex items-center justify-between">
-                          <span className="text-[11px] text-neutral-400 font-mono-tabular">
-                            {cap.rank || cap.tierTab}
-                          </span>
-                          <button
-                            type="button"
-                            aria-label={`View Captain Profile for ${cap.name}`}
-                            onClick={() => setSelectedPlayerProfile(cap)}
-                            className="px-3 py-1 rounded-lg bg-white/10 hover:bg-[#EAB308] hover:text-[#070C09] text-xs font-bold text-white transition-colors"
-                          >
-                            View Profile
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* Part B: 3 Player Testimonies */}
-                <section className="space-y-5 bg-[#0D1611] border border-white/10 rounded-2xl p-6">
-                  <div className="border-b border-white/10 pb-3">
-                    <span className="text-[11px] text-[#EF4444] font-mono-tabular uppercase tracking-wider">
-                      3 Player Testimonies
-                    </span>
-                    <h2 className="text-2xl font-bold text-white font-display uppercase mt-0.5">
-                      Player Testimonies
-                    </h2>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {threeTestimonies.map((testimonyPlayer, idx) => (
-                      <div
-                        key={testimonyPlayer.id}
-                        className="bg-[#080E0B] border border-white/[0.08] rounded-xl p-5 flex flex-col justify-between space-y-4"
-                      >
-                        <div className="space-y-2.5">
-                          <div className="flex items-center gap-2.5">
-                            <img
-                              src={TEAM_LOGOS.greenGoldCrest}
-                              alt={testimonyPlayer.name}
-                              className="w-10 h-10 object-contain rounded-full shrink-0"
-                              referrerPolicy="no-referrer"
-                            />
-                            <div>
-                              <span className="text-[11px] text-[#EAB308] font-mono-tabular block">
-                                Testimony 0{idx + 1}
-                              </span>
-                              <h3 className="text-sm font-bold text-white font-display uppercase">
-                                {testimonyPlayer.name}
-                              </h3>
-                            </div>
-                          </div>
-
-                          <p className="text-xs text-neutral-300 italic leading-relaxed font-mono-tabular">
-                            {testimonyPlayer.whatWarriorsMeans}
-                          </p>
-                        </div>
-
-                        <div className="pt-2.5 border-t border-white/10 flex items-center justify-between">
-                          <span className="text-[11px] text-neutral-400 font-mono-tabular">
-                            {testimonyPlayer.jerseyNumber
-                              ? `#${testimonyPlayer.jerseyNumber}`
-                              : 'Warrior'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedPlayerProfile(testimonyPlayer)}
-                            className="text-xs font-bold text-[#EAB308] hover:underline"
-                          >
-                            View Profile →
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* Part C: Auto-Updating Roster from Verified Google Sheets Tabs */}
-                <section className="space-y-5">
-                  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/10 pb-3">
-                    <div>
-                      <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
-                        Auto-Updated from Google Sheets
-                      </span>
-                      <h2 className="text-2xl font-bold text-white font-display uppercase mt-0.5">
-                        Roster & Position Tabs ({filteredPlayers.length})
+                {boardMembers.length > 0 && (
+                  <section className="space-y-5">
+                    <div className="text-center max-w-xl mx-auto space-y-1">
+                      <h2 className="text-2xl sm:text-3xl font-extrabold text-[#EAB308] font-display uppercase tracking-wide">
+                        Board of Directors
                       </h2>
                     </div>
 
-                    <div className="relative w-full sm:w-64">
-                      <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={playerSearchQuery}
-                        onChange={(e) => setPlayerSearchQuery(e.target.value)}
-                        placeholder="Search player, #number, position..."
-                        aria-label="Search players"
-                        className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-[#0D1611] border border-white/15 text-xs text-white focus:border-[#EAB308] focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Sheet Tabs & Military Rank Filters */}
-                  <div className="space-y-2.5 bg-[#0D1611] border border-white/10 rounded-xl p-3.5">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] text-neutral-400 font-mono-tabular mr-1.5">
-                        Sheet Tabs:
-                      </span>
-                      {['All', ...dynamicTabs].map((tab) => (
-                        <button
-                          key={tab}
-                          type="button"
-                          onClick={() => setSelectedTierTab(tab)}
-                          className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
-                            selectedTierTab === tab
-                              ? 'bg-[#EAB308] text-[#070C09]'
-                              : 'bg-[#070C09] text-neutral-300 hover:text-white'
-                          }`}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                      {boardMembers.map((member) => (
+                        <div
+                          key={member.id}
+                          className="bg-[#0D1611] border border-white/10 rounded-2xl overflow-hidden flex flex-col justify-between"
                         >
-                          {tab === 'All' ? 'All Tabs' : tab}
-                        </button>
-                      ))}
-                    </div>
-
-                    {availableRanks.length > 1 && (
-                      <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-white/10">
-                        <span className="text-[11px] text-neutral-400 font-mono-tabular mr-1.5">
-                          Positions:
-                        </span>
-                        {availableRanks.map((rk) => (
-                          <button
-                            key={rk}
-                            type="button"
-                            onClick={() => setSelectedRankFilter(rk)}
-                            className={`px-2.5 py-1 rounded text-xs font-mono-tabular transition-colors whitespace-nowrap shrink-0 ${
-                              selectedRankFilter === rk
-                                ? 'bg-[#881616] text-white font-bold'
-                                : 'bg-[#070C09] text-neutral-300 hover:text-white'
-                            }`}
-                          >
-                            {rk === 'All' ? 'All Positions' : rk}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Roster Cards Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {filteredPlayers.map((player) => (
-                      <div
-                        key={player.id}
-                        className="bg-[#0D1611] border border-white/10 hover:border-[#EAB308]/40 rounded-2xl overflow-hidden flex flex-col justify-between transition-all"
-                      >
-                        <div>
-                          <div className="aspect-[4/3] bg-gradient-to-br from-[#16271C] via-[#0F1B14] to-[#080E0B] p-4 flex flex-col items-center justify-center text-center">
-                            {player.jerseyPhotoUrl ? (
+                          {member.photoUrl && (
+                            <div className="aspect-square bg-[#080E0B] overflow-hidden">
                               <img
-                                src={player.jerseyPhotoUrl}
-                                alt={player.name}
+                                src={member.photoUrl}
+                                alt={member.name || member.role || 'Board Member'}
                                 className="w-full h-full object-cover"
                                 referrerPolicy="no-referrer"
                               />
-                            ) : (
-                              <>
-                                <img
-                                  src={TEAM_LOGOS.greenGoldCrest}
-                                  alt={player.name}
-                                  className="w-14 h-14 object-contain mb-2"
-                                  referrerPolicy="no-referrer"
-                                />
-                                {player.jerseyNumber && (
-                                  <span className="text-lg font-extrabold text-white font-mono-tabular">
-                                    #{player.jerseyNumber}{' '}
-                                    {player.position ? `· ${player.position}` : ''}
-                                  </span>
-                                )}
-                              </>
+                            </div>
+                          )}
+
+                          <div className="p-4 text-center space-y-1.5 bg-[#0A110D] flex-1 flex flex-col justify-center">
+                            {member.role && (
+                              <span className="text-xs font-bold text-[#EAB308] uppercase font-display tracking-wider block">
+                                {member.role}
+                              </span>
+                            )}
+                            {member.name && (
+                              <h3 className="text-sm font-bold text-white font-mono-tabular">
+                                {member.name}
+                              </h3>
+                            )}
+                            {(member.rank || member.branchOrBackground) && (
+                              <p className="text-[11px] text-neutral-400 font-mono-tabular">
+                                {[member.rank, member.branchOrBackground].filter(Boolean).join(' · ')}
+                              </p>
+                            )}
+                            {member.caption && (
+                              <p className="text-[11px] text-neutral-300 leading-relaxed pt-1 font-mono-tabular">
+                                {member.caption}
+                              </p>
                             )}
                           </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
 
-                          <div className="p-4 space-y-1.5">
-                            <div className="flex items-center justify-between text-[11px] text-neutral-400 font-mono-tabular">
-                              <span>
-                                {[player.rank, player.branch].filter(Boolean).join(' · ') ||
-                                  (player.isPlaceholder ? 'Temporary Placeholder' : 'Warrior')}
-                              </span>
-                              <span>{player.tierTab}</span>
+                {coaches.length > 0 && (
+                  <section
+                    className={`space-y-5 ${
+                      boardMembers.length > 0 ? 'pt-4 border-t border-white/10' : ''
+                    }`}
+                  >
+                    <div className="text-center max-w-xl mx-auto space-y-1">
+                      <h2 className="text-2xl sm:text-3xl font-extrabold text-[#EF4444] font-display uppercase tracking-wide">
+                        Coaches
+                      </h2>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl mx-auto">
+                      {coaches.map((coach) => (
+                        <div
+                          key={coach.id}
+                          className="bg-[#0D1611] border border-white/10 rounded-2xl overflow-hidden flex flex-col justify-between"
+                        >
+                          {coach.photoUrl && (
+                            <div className="aspect-square bg-[#080E0B] overflow-hidden">
+                              <img
+                                src={coach.photoUrl}
+                                alt={coach.name || coach.role || 'Coach'}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
                             </div>
-                            <h3 className="text-base font-bold text-white font-display uppercase">
-                              {player.name}
-                            </h3>
-                            <p className="text-xs text-neutral-300 line-clamp-2 font-mono-tabular">
-                              {player.shortCaption}
-                            </p>
+                          )}
+
+                          <div className="p-4 text-center space-y-1.5 bg-[#0A110D] flex-1 flex flex-col justify-center">
+                            {coach.role && (
+                              <span className="text-xs font-bold text-red-300 uppercase font-display tracking-wider block">
+                                {coach.role}
+                              </span>
+                            )}
+                            {coach.name && (
+                              <h3 className="text-sm font-bold text-white font-mono-tabular">
+                                {coach.name}
+                              </h3>
+                            )}
+                            {(coach.rank || coach.branchOrBackground) && (
+                              <p className="text-[11px] text-neutral-400 font-mono-tabular">
+                                {[coach.rank, coach.branchOrBackground].filter(Boolean).join(' · ')}
+                              </p>
+                            )}
+                            {coach.caption && (
+                              <p className="text-[11px] text-neutral-300 leading-relaxed pt-1 font-mono-tabular">
+                                {coach.caption}
+                              </p>
+                            )}
                           </div>
                         </div>
-
-                        <div className="px-4 py-3 bg-[#0A110D] border-t border-white/10 flex items-center justify-between">
-                          <span className="text-[11px] text-neutral-400 font-mono-tabular">
-                            Profile & Media
-                          </span>
-                          <button
-                            type="button"
-                            aria-label={`View Roster Profile for ${player.name}`}
-                            onClick={() => setSelectedPlayerProfile(player)}
-                            className="px-3 py-1 rounded-lg bg-[#EAB308] text-[#070C09] text-xs font-bold hover:bg-[#FACC15] transition-colors"
-                          >
-                            View Profile
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
+                      ))}
+                    </div>
+                  </section>
+                )}
               </div>
             )}
 
             {/* ---------------------------------------------------------------
-                ABOUT SUB-TAB 4: FANS (Friends, Families & Pets Compilation)
+                ABOUT SUB-TAB 3: PLAYERS (Only renders non-empty sections & cells)
                --------------------------------------------------------------- */}
-            {aboutSubTab === 'fans' && (
+            {aboutSubTab === 'players' && (
+              <div className="space-y-12">
+                {/* Part A: Team Captains (Only rendered when Captain rows exist in sheet) */}
+                {fourCaptains.length > 0 && (
+                  <section className="space-y-5">
+                    <div className="border-b border-white/10 pb-3">
+                      <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
+                        Team Leadership
+                      </span>
+                      <h2 className="text-2xl font-bold text-white font-display uppercase mt-0.5">
+                        Team Captains
+                      </h2>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {fourCaptains.map((cap) => (
+                        <div
+                          key={cap.id}
+                          className="bg-[#0D1611] border border-white/10 hover:border-[#EAB308]/40 rounded-2xl overflow-hidden flex flex-col justify-between transition-colors"
+                        >
+                          <div>
+                            {cap.jerseyPhotoUrl && (
+                              <div className="aspect-square bg-[#080E0B] overflow-hidden">
+                                <img
+                                  src={cap.jerseyPhotoUrl}
+                                  alt={cap.name || 'Captain'}
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            )}
+
+                            <div className="p-4 space-y-1.5">
+                              {(cap.roleBadge && cap.roleBadge !== 'None' && cap.roleBadge !== 'Player') ||
+                              cap.jerseyNumber ? (
+                                <span className="text-xs font-bold text-[#EAB308] font-mono-tabular uppercase block">
+                                  {[
+                                    cap.roleBadge &&
+                                    cap.roleBadge !== 'None' &&
+                                    cap.roleBadge !== 'Player'
+                                      ? cap.roleBadge
+                                      : '',
+                                    cap.jerseyNumber ? `#${cap.jerseyNumber}` : '',
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </span>
+                              ) : null}
+                              {cap.name && (
+                                <h3 className="text-sm font-bold text-white font-display uppercase">
+                                  {cap.name}
+                                </h3>
+                              )}
+                              {cap.shortCaption && (
+                                <p className="text-xs text-neutral-300 leading-relaxed font-mono-tabular">
+                                  {cap.shortCaption}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="px-4 py-3 border-t border-white/10 bg-[#0A110D] flex items-center justify-between">
+                            <span className="text-[11px] text-neutral-400 font-mono-tabular">
+                              {[cap.position, cap.rank, cap.tierTab].filter(Boolean).join(' · ')}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`View Captain Profile for ${cap.name || 'Captain'}`}
+                              onClick={() => setSelectedPlayerProfile(cap)}
+                              className="px-3 py-1 rounded-lg bg-white/10 hover:bg-[#EAB308] hover:text-[#070C09] text-xs font-bold text-white transition-colors"
+                            >
+                              View Profile
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Part B: Player Testimonies (Only rendered when WhatWarriorMeans cells are non-empty) */}
+                {threeTestimonies.length > 0 && (
+                  <section className="space-y-5 bg-[#0D1611] border border-white/10 rounded-2xl p-6">
+                    <div className="border-b border-white/10 pb-3">
+                      <span className="text-[11px] text-[#EF4444] font-mono-tabular uppercase tracking-wider">
+                        What the Warriors Means
+                      </span>
+                      <h2 className="text-2xl font-bold text-white font-display uppercase mt-0.5">
+                        Player Testimonies
+                      </h2>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {threeTestimonies.map((testimonyPlayer, idx) => (
+                        <div
+                          key={testimonyPlayer.id}
+                          className="bg-[#080E0B] border border-white/[0.08] rounded-xl p-5 flex flex-col justify-between space-y-4"
+                        >
+                          <div className="space-y-2.5">
+                            <div className="flex items-center gap-2.5">
+                              {testimonyPlayer.jerseyPhotoUrl ? (
+                                <img
+                                  src={testimonyPlayer.jerseyPhotoUrl}
+                                  alt={testimonyPlayer.name || 'Warrior'}
+                                  className="w-10 h-10 object-cover rounded-full shrink-0"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <img
+                                  src={TEAM_LOGOS.greenGoldCrest}
+                                  alt={testimonyPlayer.name || 'Warrior'}
+                                  className="w-10 h-10 object-contain rounded-full shrink-0"
+                                  referrerPolicy="no-referrer"
+                                />
+                              )}
+                              <div>
+                                <span className="text-[11px] text-[#EAB308] font-mono-tabular block">
+                                  Testimony 0{idx + 1}
+                                </span>
+                                {testimonyPlayer.name && (
+                                  <h3 className="text-sm font-bold text-white font-display uppercase">
+                                    {testimonyPlayer.name}
+                                  </h3>
+                                )}
+                              </div>
+                            </div>
+
+                            {testimonyPlayer.whatWarriorsMeans && (
+                              <p className="text-xs text-neutral-300 italic leading-relaxed font-mono-tabular">
+                                {testimonyPlayer.whatWarriorsMeans}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="pt-2.5 border-t border-white/10 flex items-center justify-between">
+                            <span className="text-[11px] text-neutral-400 font-mono-tabular">
+                              {testimonyPlayer.jerseyNumber
+                                ? `#${testimonyPlayer.jerseyNumber}`
+                                : testimonyPlayer.position || ''}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPlayerProfile(testimonyPlayer)}
+                              className="text-xs font-bold text-[#EAB308] hover:underline"
+                            >
+                              View Profile →
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Part C: Auto-Updating Roster from Verified Google Sheets Tabs (Only rendered when players exist) */}
+                {players.length > 0 && (
+                  <section className="space-y-5">
+                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/10 pb-3">
+                      <div>
+                        <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
+                          Auto-Updated from Google Sheets
+                        </span>
+                        <h2 className="text-2xl font-bold text-white font-display uppercase mt-0.5">
+                          Roster & Position Tabs ({filteredPlayers.length})
+                        </h2>
+                      </div>
+
+                      <div className="relative w-full sm:w-64">
+                        <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={playerSearchQuery}
+                          onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                          placeholder="Search player, #number, position..."
+                          aria-label="Search players"
+                          className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-[#0D1611] border border-white/15 text-xs text-white focus:border-[#EAB308] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Sheet Tabs & Positions Filters (Only rendered if tabs or positions exist) */}
+                    {(dynamicTabs.length > 0 || availableRanks.length > 1) && (
+                      <div className="space-y-2.5 bg-[#0D1611] border border-white/10 rounded-xl p-3.5">
+                        {dynamicTabs.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] text-neutral-400 font-mono-tabular mr-1.5">
+                              Sheet Tabs:
+                            </span>
+                            {['All', ...dynamicTabs].map((tab) => (
+                              <button
+                                key={tab}
+                                type="button"
+                                onClick={() => setSelectedTierTab(tab)}
+                                className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                                  selectedTierTab === tab
+                                    ? 'bg-[#EAB308] text-[#070C09]'
+                                    : 'bg-[#070C09] text-neutral-300 hover:text-white'
+                                }`}
+                              >
+                                {tab === 'All' ? 'All Tabs' : tab}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {availableRanks.length > 1 && (
+                          <div
+                            className={`flex flex-wrap items-center gap-1.5 ${
+                              dynamicTabs.length > 0 ? 'pt-2 border-t border-white/10' : ''
+                            }`}
+                          >
+                            <span className="text-[11px] text-neutral-400 font-mono-tabular mr-1.5">
+                              Positions:
+                            </span>
+                            {availableRanks.map((rk) => (
+                              <button
+                                key={rk}
+                                type="button"
+                                onClick={() => setSelectedRankFilter(rk)}
+                                className={`px-2.5 py-1 rounded text-xs font-mono-tabular transition-colors whitespace-nowrap shrink-0 ${
+                                  selectedRankFilter === rk
+                                    ? 'bg-[#881616] text-white font-bold'
+                                    : 'bg-[#070C09] text-neutral-300 hover:text-white'
+                                }`}
+                              >
+                                {rk === 'All' ? 'All Positions' : rk}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Roster Cards Grid (Only renders non-empty cells per player) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {filteredPlayers.map((player) => (
+                        <div
+                          key={player.id}
+                          className="bg-[#0D1611] border border-white/10 hover:border-[#EAB308]/40 rounded-2xl overflow-hidden flex flex-col justify-between transition-all"
+                        >
+                          <div>
+                            {player.jerseyPhotoUrl && (
+                              <div className="aspect-[4/3] bg-[#080E0B] overflow-hidden">
+                                <img
+                                  src={player.jerseyPhotoUrl}
+                                  alt={player.name || 'Warrior'}
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            )}
+
+                            <div className="p-4 space-y-1.5">
+                              {(player.rank ||
+                                player.branch ||
+                                player.tierTab ||
+                                player.jerseyNumber ||
+                                player.position) && (
+                                <div className="flex items-center justify-between text-[11px] text-neutral-400 font-mono-tabular">
+                                  <span>
+                                    {[
+                                      player.jerseyNumber ? `#${player.jerseyNumber}` : '',
+                                      player.position,
+                                      player.rank,
+                                      player.branch,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(' · ')}
+                                  </span>
+                                  {player.tierTab && <span>{player.tierTab}</span>}
+                                </div>
+                              )}
+                              {player.name && (
+                                <h3 className="text-base font-bold text-white font-display uppercase">
+                                  {player.name}
+                                </h3>
+                              )}
+                              {player.bio && (
+                                <p className="text-xs text-neutral-300 line-clamp-2 font-mono-tabular">
+                                  {player.bio}
+                                </p>
+                              )}
+                              {!player.bio && player.hometown && (
+                                <p className="text-xs text-neutral-300 font-mono-tabular">
+                                  {player.hometown}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="px-4 py-3 bg-[#0A110D] border-t border-white/10 flex items-center justify-between">
+                            <span className="text-[11px] text-neutral-400 font-mono-tabular">
+                              {player.roleBadge &&
+                              player.roleBadge !== 'None' &&
+                              player.roleBadge !== 'Player'
+                                ? player.roleBadge
+                                : player.yearsOfService || ''}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`View Roster Profile for ${player.name || 'Player'}`}
+                              onClick={() => setSelectedPlayerProfile(player)}
+                              className="px-3 py-1 rounded-lg bg-[#EAB308] text-[#070C09] text-xs font-bold hover:bg-[#FACC15] transition-colors"
+                            >
+                              View Profile
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </div>
+            )}
+
+            {/* ---------------------------------------------------------------
+                ABOUT SUB-TAB 4: FANS (Only renders when Fans tab has rows & non-empty cells)
+               --------------------------------------------------------------- */}
+            {aboutSubTab === 'fans' && fans.length > 0 && (
               <div className="space-y-6">
                 <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
@@ -1386,36 +1419,37 @@ export default function App() {
                       key={fan.id}
                       className="bg-[#0D1611] border border-white/10 rounded-2xl overflow-hidden flex flex-col justify-between"
                     >
-                      <div className="aspect-video bg-gradient-to-br from-[#16271C] to-[#080E0B] p-5 flex flex-col items-center justify-center text-center">
-                        {fan.photoUrl ? (
+                      {fan.photoUrl && (
+                        <div className="aspect-video bg-[#080E0B] overflow-hidden">
                           <img
                             src={fan.photoUrl}
-                            alt={fan.title}
+                            alt={fan.title || 'Fan Photo'}
                             className="w-full h-full object-cover"
                             referrerPolicy="no-referrer"
                           />
-                        ) : (
-                          <>
-                            <Users className="w-8 h-8 text-[#EAB308] mb-2" />
-                            <span className="text-sm font-bold text-white font-display uppercase">
-                              {fan.title}
-                            </span>
-                            <span className="mt-2 text-[10px] text-amber-200/90 font-mono-tabular bg-black/50 p-2 rounded border border-[#EAB308]/30">
-                              {fan.photoPlaceholder}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <div className="p-4 space-y-1.5 border-t border-white/10 bg-[#0A110D]">
-                        <div className="text-[11px] text-[#EAB308] font-mono-tabular">
-                          {fan.category}
                         </div>
-                        <h3 className="text-base font-bold text-white font-display uppercase">
-                          {fan.title}
-                        </h3>
-                        <p className="text-xs text-neutral-300 leading-relaxed font-mono-tabular">
-                          {fan.caption}
-                        </p>
+                      )}
+                      <div className="p-4 space-y-1.5 bg-[#0A110D] flex-1">
+                        {fan.category && (
+                          <div className="text-[11px] text-[#EAB308] font-mono-tabular">
+                            {fan.category}
+                          </div>
+                        )}
+                        {fan.title && (
+                          <h3 className="text-base font-bold text-white font-display uppercase">
+                            {fan.title}
+                          </h3>
+                        )}
+                        {fan.relatedPlayer && (
+                          <p className="text-xs text-neutral-400 font-mono-tabular">
+                            {fan.relatedPlayer}
+                          </p>
+                        )}
+                        {fan.caption && (
+                          <p className="text-xs text-neutral-300 leading-relaxed font-mono-tabular">
+                            {fan.caption}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1428,7 +1462,7 @@ export default function App() {
         {/* ===================================================================
             3. EVENTS & SOCIAL MEDIA POSTS SECTION
                - Scrollable Live Viewing iFrames for Instagram & Facebook (No API Key Needed)
-               - Event Cards with [Insert description of this event - text] Placeholders
+               - Event Listings only rendered when Events tab in Google Sheets has rows
            =================================================================== */}
         {activeSection === 'events' && (
           <div className="space-y-10">
@@ -1451,62 +1485,79 @@ export default function App() {
             {/* Live Scrollable Social Media Viewing iFrames (Instagram + Facebook) */}
             {renderLiveSocialViewingGrid()}
 
-            {/* Event Entries (Shows [Insert description of this event - text] placeholders until populated) */}
-            <div className="max-w-3xl mx-auto space-y-4 pt-4 border-t border-white/10">
-              <h2 className="text-xl sm:text-2xl font-bold text-[#EAB308] font-display uppercase tracking-wide text-center">
-                Event Listings
-              </h2>
-              {events.map((ev) => (
-                <div
-                  key={ev.id}
-                  className="bg-[#111915] border border-white/10 rounded-2xl overflow-hidden shadow-lg"
-                >
-                  <div className="p-5 border-b border-white/10 flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center p-2 shrink-0 overflow-hidden">
-                      {ev.imageUrl ? (
-                        <img
-                          src={ev.imageUrl}
-                          alt={ev.title}
-                          className="w-full h-full object-cover rounded-lg"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <img
-                          src={TEAM_LOGOS.redNjStickCrest}
-                          alt={ev.title}
-                          className="w-full h-full object-contain rounded-full"
-                          referrerPolicy="no-referrer"
-                        />
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      <h3 className="text-base sm:text-lg font-bold text-white font-mono-tabular">
-                        {ev.title}
-                      </h3>
-                      <p className="text-xs text-neutral-400 font-mono-tabular">
-                        {ev.date}
-                        {ev.time ? ` · ${ev.time}` : ''}
-                      </p>
-                      <p className="text-xs text-[#EAB308] flex items-center gap-1 font-mono-tabular">
-                        <MapPin className="w-3.5 h-3.5" />
-                        <span>{ev.location}</span>
-                      </p>
-                    </div>
-                  </div>
+            {/* Event Entries (Only rendered when Events tab has rows; only renders non-empty cells) */}
+            {events.length > 0 && (
+              <div className="max-w-3xl mx-auto space-y-4 pt-4 border-t border-white/10">
+                <h2 className="text-xl sm:text-2xl font-bold text-[#EAB308] font-display uppercase tracking-wide text-center">
+                  Event Listings
+                </h2>
+                {events.map((ev) => (
+                  <div
+                    key={ev.id}
+                    className="bg-[#111915] border border-white/10 rounded-2xl overflow-hidden shadow-lg"
+                  >
+                    {(ev.imageUrl || ev.title || ev.date || ev.time || ev.location || ev.category) && (
+                      <div className="p-5 border-b border-white/10 flex items-center gap-4">
+                        {ev.imageUrl && (
+                          <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+                            <img
+                              src={ev.imageUrl}
+                              alt={ev.title || 'Event'}
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          {ev.category && (
+                            <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase">
+                              {ev.category}
+                            </span>
+                          )}
+                          {ev.title && (
+                            <h3 className="text-base sm:text-lg font-bold text-white font-mono-tabular">
+                              {ev.title}
+                            </h3>
+                          )}
+                          {(ev.date || ev.time) && (
+                            <p className="text-xs text-neutral-400 font-mono-tabular">
+                              {[ev.date, ev.time].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
+                          {ev.location && (
+                            <p className="text-xs text-[#EAB308] flex items-center gap-1 font-mono-tabular">
+                              <MapPin className="w-3.5 h-3.5" />
+                              <span>{ev.location}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
-                  <div className="p-5 space-y-3">
-                    <p className="text-xs sm:text-sm text-neutral-200 leading-relaxed font-mono-tabular">
-                      {ev.description}
-                    </p>
-                    {!ev.imageUrl && (
-                      <div className="p-2.5 rounded-lg bg-black/40 border border-[#EAB308]/30 text-[11px] text-amber-200/90 font-mono-tabular">
-                        {ev.placeholderBanner}
+                    {(ev.description || ev.externalUrl) && (
+                      <div className="p-5 space-y-3">
+                        {ev.description && (
+                          <p className="text-xs sm:text-sm text-neutral-200 leading-relaxed font-mono-tabular">
+                            {ev.description}
+                          </p>
+                        )}
+                        {ev.externalUrl && (
+                          <a
+                            href={ev.externalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#EAB308] hover:underline"
+                          >
+                            <span>View Event Link</span>
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
                       </div>
                     )}
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

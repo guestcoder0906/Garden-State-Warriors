@@ -133,16 +133,28 @@ function normalizeHeaderKey(header: string): string {
 }
 
 /**
+ * Cleans a raw cell value from Google Sheets or Apps Script.
+ * Any empty string, "--", "—", or "[Insert/Replace ...]" placeholder is treated as empty ('')
+ * so its corresponding UI is completely hidden while the cell is empty.
+ */
+export function cleanSheetCell(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  const str = String(val).trim();
+  if (!str || str === '--' || str === '—') return '';
+  if (str.startsWith('[') && str.endsWith(']')) return '';
+  return str;
+}
+
+/**
  * Parses a 2D string array from a Google Sheet tab into PlayerProfile objects.
  * Matches the user's exact 15-column sheet format:
  * Last Name | First Name | Jersey Number | Position | RosterTab | Military Branch | Military Rank | Service Era | Hometown | Role Badge | JerseyPhotoUrl | MilitaryPhotoUrl | Bio | WhatWarriorMeans | MediaUrlsCsv
  *
- * NOT ALL INPUTS ARE REQUIRED:
- * Any blank columns are gracefully handled with clean temporary placeholders.
+ * Empty cells remain empty ('') so their corresponding UI elements are not rendered while empty.
  */
 export function parseSheetRowsToPlayers(
   rows: string[][],
-  defaultTabName = 'Veterans Roster'
+  defaultTabName = ''
 ): PlayerProfile[] {
   if (!rows || rows.length < 2) return [];
   const normHeaders = rows[0].map(normalizeHeaderKey);
@@ -173,14 +185,18 @@ export function parseSheetRowsToPlayers(
   );
   const idxMedia = findCol(['mediaurlscsv', 'mediaurls', 'media'], ['media', 'gallery']);
 
+  const isGenericSheetName = (name: string) =>
+    !name ||
+    /^(sheet\d*|roster|garden state warriors roster|veterans roster|players)$/i.test(name.trim());
+
   const players: PlayerProfile[] = [];
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!row || row.every((cell) => !cell || !String(cell).trim())) continue;
+    if (!row || row.every((cell) => !cleanSheetCell(cell))) continue;
 
     const getCell = (idx: number) =>
-      idx >= 0 && row[idx] !== undefined ? String(row[idx]).trim() : '';
+      idx >= 0 && row[idx] !== undefined ? cleanSheetCell(row[idx]) : '';
 
     // Skip rows that are explicitly marked as Board, Coach, or Events in RosterTab or Role Badge
     const rawRosterTab = getCell(idxRosterTab);
@@ -208,16 +224,14 @@ export function parseSheetRowsToPlayers(
       displayName = firstName || lastName;
     } else if (explicitFull) {
       displayName = explicitFull;
-    } else {
-      const firstNonEmpty = row.find((c) => c && String(c).trim());
-      displayName = firstNonEmpty ? String(firstNonEmpty).trim() : `Player #${i}`;
     }
 
     const jerseyNumber = getCell(idxJersey);
     const position = getCell(idxPos);
     const branch = getCell(idxBranch);
     const rank = getCell(idxRank);
-    const rawTier = rawRosterTab || defaultTabName || 'Veterans Roster';
+    const fallbackTab = isGenericSheetName(defaultTabName) ? '' : defaultTabName.trim();
+    const rawTier = rawRosterTab || fallbackTab;
     const yearsOfService = getCell(idxEra);
     const hometown = getCell(idxHometown);
     const rawBio = getCell(idxBio);
@@ -226,7 +240,7 @@ export function parseSheetRowsToPlayers(
     const militaryPhotoUrl = getCell(idxMilitaryPhoto) || undefined;
     const rawMedia = getCell(idxMedia);
 
-    let tierTab = rawTier.trim() || 'Veterans Roster';
+    let tierTab = rawTier;
     if (/^captain/i.test(rawTier)) {
       tierTab = 'Captains';
     } else if (/^alpha/i.test(rawTier)) {
@@ -237,13 +251,13 @@ export function parseSheetRowsToPlayers(
       tierTab = 'Charlie';
     }
 
-    let roleBadge: PlayerProfile['roleBadge'] = 'Player';
+    let roleBadge: PlayerProfile['roleBadge'] = 'None';
     if (/alternate|\ba\b/i.test(rawRoleBadge)) {
       roleBadge = 'Alternate Captain';
     } else if (/captain|\bc\b/i.test(rawRoleBadge) || /^captains$/i.test(defaultTabName)) {
       roleBadge = 'Captain';
-    } else if (/none/i.test(rawRoleBadge)) {
-      roleBadge = 'None';
+    } else if (rawRoleBadge) {
+      roleBadge = 'Player';
     }
 
     const shortParts = [
@@ -254,20 +268,14 @@ export function parseSheetRowsToPlayers(
       hometown,
     ].filter(Boolean);
 
-    const shortCaption =
-      shortParts.length > 0
-        ? shortParts.join(' · ')
-        : '[Insert small caption / rank / branch in Google Sheets - text]';
-
-    const bio = rawBio || '[Insert player bio in Google Sheets Bio column - text]';
-    const whatWarriorsMeans =
-      rawMeaning ||
-      '[Insert player testimony in Google Sheets WhatWarriorMeans column - text]';
+    const shortCaption = shortParts.join(' · ');
+    const bio = rawBio;
+    const whatWarriorsMeans = rawMeaning;
 
     const mediaUrls = rawMedia
       ? rawMedia
           .split(',')
-          .map((u) => u.trim())
+          .map((u) => cleanSheetCell(u))
           .filter(Boolean)
       : [];
 
@@ -275,11 +283,13 @@ export function parseSheetRowsToPlayers(
       id: `sheet-media-${i}-${idx}`,
       type: /\.(mp4|webm|mov)$/i.test(url) ? 'video' : 'image',
       url,
-      caption: `${displayName} — Media #${idx + 1}`,
+      caption: displayName ? `${displayName} — Media #${idx + 1}` : `Media #${idx + 1}`,
     }));
 
     players.push({
-      id: `sheet-${defaultTabName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${i}-${displayName
+      id: `sheet-${(defaultTabName || 'roster').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${i}-${(
+        displayName || `row-${i}`
+      )
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')}`,
       name: displayName,
@@ -299,14 +309,8 @@ export function parseSheetRowsToPlayers(
       isTestimonyFeatured: Boolean(rawMeaning),
       jerseyPhotoUrl,
       militaryPhotoUrl,
-      jerseyPhotoPlaceholder: formatReplaceTag(
-        `${displayName} jersey photo URL in Google Sheets JerseyPhotoUrl column`,
-        'image'
-      ),
-      militaryPhotoPlaceholder: formatReplaceTag(
-        `${displayName} military photo URL in Google Sheets MilitaryPhotoUrl column`,
-        'image'
-      ),
+      jerseyPhotoPlaceholder: '',
+      militaryPhotoPlaceholder: '',
       mediaGallery,
       isPlaceholder: false,
     });
@@ -336,14 +340,14 @@ export function parseSheetRowsToStaff(
   const idxBranch = findCol(['militarybranch', 'branch', 'background']);
   const idxRank = findCol(['militaryrank', 'rank']);
   const idxCaption = findCol(['bio', 'caption', 'description', 'whatwarriormeans']);
-  const idxPhoto = findCol(['jerseyphotourl', 'photo', 'image', 'headshot']);
+  const idxPhoto = findCol(['jerseyphotourl', 'photourl', 'photo', 'image', 'headshot']);
 
   const staffList: StaffMember[] = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!row || row.every((c) => !c || !String(c).trim())) continue;
+    if (!row || row.every((c) => !cleanSheetCell(c))) continue;
     const getCell = (idx: number) =>
-      idx >= 0 && row[idx] !== undefined ? String(row[idx]).trim() : '';
+      idx >= 0 && row[idx] !== undefined ? cleanSheetCell(row[idx]) : '';
 
     const rawTab = getCell(idxRosterTab);
     const rawRole = getCell(idxRole);
@@ -366,20 +370,16 @@ export function parseSheetRowsToStaff(
     const last = getCell(idxLast);
     const full =
       idxName >= 0 && idxName !== idxFirst && idxName !== idxLast ? getCell(idxName) : '';
-    const role = rawRole || (category === 'Coach' ? `Coach #${i}` : `Board Officer #${i}`);
-    const name =
-      first || last
-        ? [first, last].filter(Boolean).join(' ')
-        : full || '[Insert Name in Google Sheets - text]';
+    const role = rawRole;
+    const name = first || last ? [first, last].filter(Boolean).join(' ') : full;
 
     const branchOrBackground = getCell(idxBranch);
     const rank = getCell(idxRank);
-    const caption =
-      getCell(idxCaption) || '[Insert small caption in Google Sheets Bio column - text]';
+    const caption = getCell(idxCaption);
     const photoUrl = getCell(idxPhoto) || undefined;
 
     staffList.push({
-      id: `sheet-staff-${i}-${role.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      id: `sheet-staff-${i}-${(role || name || `row-${i}`).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
       name,
       role,
       category,
@@ -387,7 +387,7 @@ export function parseSheetRowsToStaff(
       rank: rank || undefined,
       caption,
       photoUrl,
-      photoPlaceholder: formatReplaceTag(`${role} photo in Google Sheets`, 'image'),
+      photoPlaceholder: '',
       isPlaceholder: false,
     });
   }
@@ -420,21 +420,21 @@ export function parseSheetRowsToEvents(
   const events: ClubEvent[] = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!row || row.every((c) => !c || !String(c).trim())) continue;
+    if (!row || row.every((c) => !cleanSheetCell(c))) continue;
     const getCell = (idx: number) =>
-      idx >= 0 && row[idx] !== undefined ? String(row[idx]).trim() : '';
+      idx >= 0 && row[idx] !== undefined ? cleanSheetCell(row[idx]) : '';
 
     if (mode === 'InlineRosterTab') {
       const rawTab = getCell(idxRosterTab);
       if (!/^(event|events|schedule)$/i.test(rawTab)) continue;
     }
 
-    const title = getCell(idxTitle) || (row[0] ? String(row[0]).trim() : `Event #${i}`);
-    const date = getCell(idxDate) || '[Insert event date - text]';
+    const title = getCell(idxTitle);
+    const date = getCell(idxDate);
     const time = getCell(idxTime);
-    const location = getCell(idxLoc) || '[Insert event location - text]';
-    const category = getCell(idxCategory) || 'Event';
-    const description = getCell(idxDesc) || '[Insert description of this event - text]';
+    const location = getCell(idxLoc);
+    const category = getCell(idxCategory);
+    const description = getCell(idxDesc);
     const imageUrl = getCell(idxImg) || undefined;
     const externalUrl = getCell(idxUrl) || undefined;
 
@@ -447,7 +447,7 @@ export function parseSheetRowsToEvents(
       category,
       description,
       imageUrl,
-      placeholderBanner: formatReplaceTag(`event image for ${title}`, 'image'),
+      placeholderBanner: '',
       externalUrl,
       isPlaceholder: false,
     });
@@ -474,11 +474,11 @@ export function parseSheetRowsToFans(rows: string[][]): FanItem[] {
   const fans: FanItem[] = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!row || row.every((c) => !c || !String(c).trim())) continue;
+    if (!row || row.every((c) => !cleanSheetCell(c))) continue;
     const getCell = (idx: number) =>
-      idx >= 0 && row[idx] !== undefined ? String(row[idx]).trim() : '';
+      idx >= 0 && row[idx] !== undefined ? cleanSheetCell(row[idx]) : '';
 
-    const title = getCell(idxTitle) || (row[0] ? String(row[0]).trim() : `Warrior Fan #${i}`);
+    const title = getCell(idxTitle);
     const rawCat = getCell(idxCategory);
     const category: 'Family' | 'Friends' | 'Pets' = /pet|dog|cat/i.test(rawCat)
       ? 'Pets'
@@ -486,17 +486,17 @@ export function parseSheetRowsToFans(rows: string[][]): FanItem[] {
       ? 'Friends'
       : 'Family';
     const relatedPlayer = getCell(idxPlayer) || undefined;
-    const caption = getCell(idxCaption) || '[Insert small caption for fan / family / pet - text]';
+    const caption = getCell(idxCaption);
     const photoUrl = getCell(idxPhoto) || undefined;
 
     fans.push({
       id: `sheet-fan-${i}`,
       title,
-      category,
+      category: rawCat ? category : ('' as any),
       relatedPlayer,
       caption,
       photoUrl,
-      photoPlaceholder: formatReplaceTag(`photo for ${title}`, 'image'),
+      photoPlaceholder: '',
     });
   }
   return fans;
@@ -521,13 +521,13 @@ export function parseSheetRowsToSponsors(rows: string[][]): SponsorItem[] {
   const sponsors: SponsorItem[] = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!row || row.every((c) => !c || !String(c).trim())) continue;
+    if (!row || row.every((c) => !cleanSheetCell(c))) continue;
     const getCell = (idx: number) =>
-      idx >= 0 && row[idx] !== undefined ? String(row[idx]).trim() : '';
+      idx >= 0 && row[idx] !== undefined ? cleanSheetCell(row[idx]) : '';
 
-    const name = getCell(idxName) || (row[0] ? String(row[0]).trim() : `Sponsor #${i}`);
-    const tier = getCell(idxTier) || 'Sponsor';
-    const description = getCell(idxDesc) || '[Insert description of sponsor / supporter - text]';
+    const name = getCell(idxName);
+    const tier = getCell(idxTier);
+    const description = getCell(idxDesc);
     const website = getCell(idxWeb) || undefined;
     const logoUrl = getCell(idxLogo) || undefined;
 
@@ -538,7 +538,7 @@ export function parseSheetRowsToSponsors(rows: string[][]): SponsorItem[] {
       description,
       website,
       logoUrl,
-      placeholderNote: formatReplaceTag(`logo for ${name}`, 'image'),
+      placeholderNote: '',
     });
   }
   return sponsors;
@@ -549,7 +549,6 @@ export function parseSheetRowsToSponsors(rows: string[][]): SponsorItem[] {
  * Supports BOTH:
  * 1) `{ sheets: Record<string, string[][]> }` (raw 2D rows per tab), AND
  * 2) `{ players: [...], board: [...], coaches: [...], events: [...], fans: [...], sponsors: [...] }` (structured Apps Script payload).
- * If the sheet has no data rows yet (only headers), returns empty arrays so temporary placeholders are shown.
  */
 export function parseAppsScriptPayload(payload: {
   title?: string;
@@ -576,7 +575,7 @@ export function parseAppsScriptPayload(payload: {
   const allEvents: ClubEvent[] = [];
   const allFans: FanItem[] = [];
   const allSponsors: SponsorItem[] = [];
-  const playerTabs: string[] = [];
+  const playerTabsSet = new Set<string>();
 
   // 1. Parse raw 2D tab arrays if present in `payload.sheets`
   for (const tabName of tabNames) {
@@ -599,7 +598,9 @@ export function parseAppsScriptPayload(payload: {
       const inlineEvents = parseSheetRowsToEvents(rows, 'InlineRosterTab');
       if (parsedPlayers.length > 0) {
         allPlayers.push(...parsedPlayers);
-        playerTabs.push(tabName);
+        parsedPlayers.forEach((p) => {
+          if (p.tierTab) playerTabsSet.add(p.tierTab);
+        });
       }
       if (inlineStaff.length > 0) {
         allStaff.push(...inlineStaff);
@@ -613,48 +614,74 @@ export function parseAppsScriptPayload(payload: {
   // 2. Also support structured arrays (`players`, `board`, `coaches`, `events`, `fans`, `sponsors`) if `sheets` wasn't used
   if (allPlayers.length === 0 && Array.isArray(payload?.players) && payload.players.length > 0) {
     payload.players.forEach((p: any, i: number) => {
-      const name = p.fullName || p.name || [p.firstName, p.lastName].filter(Boolean).join(' ') || `Player #${i + 1}`;
-      const tierTab = p.rosterTab || p.tierTab || 'Alpha';
-      if (!playerTabs.includes(tierTab)) playerTabs.push(tierTab);
-      const isValidImg = (u?: string) => Boolean(u && !u.startsWith('['));
+      const firstName = cleanSheetCell(p.firstName);
+      const lastName = cleanSheetCell(p.lastName);
+      const rawFull = cleanSheetCell(p.fullName || p.name);
+      const name =
+        [firstName, lastName].filter(Boolean).join(' ') ||
+        (/^warrior #\d+$/i.test(rawFull) ? '' : rawFull);
+      const rawTier = cleanSheetCell(p.rosterTab || p.tierTab);
+      const tierTab = rawTier;
+      if (tierTab) playerTabsSet.add(tierTab);
+
+      const jerseyNumber = cleanSheetCell(p.jerseyNumber);
+      const rawPos = cleanSheetCell(p.position);
+      const position = rawPos === 'Player' ? '' : rawPos;
+      const rawBranch = cleanSheetCell(p.branch);
+      const branch = rawBranch === 'U.S. Armed Forces' ? '' : rawBranch;
+      const rank = cleanSheetCell(p.militaryRank || p.rank);
+      const yearsOfService = cleanSheetCell(p.serviceEra || p.yearsOfService);
+      const rawHometown = cleanSheetCell(p.hometown);
+      const hometown = rawHometown;
+      const bio = cleanSheetCell(p.bio);
+      const whatWarriorsMeans = cleanSheetCell(p.whatWarriorMeans || p.whatWarriorsMeans);
+      const jerseyPhotoUrl = cleanSheetCell(p.jerseyPhotoUrl) || undefined;
+      const militaryPhotoUrl = cleanSheetCell(p.militaryPhotoUrl) || undefined;
+      const rawRoleBadge = cleanSheetCell(p.roleBadge);
+
       allPlayers.push({
         id: p.id || `as-player-${i}`,
         name,
-        firstName: p.firstName || undefined,
-        lastName: p.lastName || undefined,
-        jerseyNumber: p.jerseyNumber || '',
-        position: p.position || '',
-        branch: p.branch || '',
-        rank: p.militaryRank || p.rank || '',
+        firstName: firstName || undefined,
+        lastName: lastName || undefined,
+        jerseyNumber,
+        position,
+        branch,
+        rank,
         tierTab,
-        yearsOfService: p.serviceEra || p.yearsOfService || '',
-        hometown: p.hometown || undefined,
+        yearsOfService,
+        hometown: hometown || undefined,
         roleBadge:
-          /alternate|\ba\b/i.test(p.roleBadge || '')
+          /alternate|\ba\b/i.test(rawRoleBadge)
             ? 'Alternate Captain'
-            : /captain|\bc\b/i.test(p.roleBadge || '')
+            : /captain|\bc\b/i.test(rawRoleBadge)
             ? 'Captain'
-            : 'Player',
-        shortCaption:
-          [p.militaryRank || p.rank, p.branch, p.jerseyNumber ? `#${p.jerseyNumber}` : '', p.position]
-            .filter(Boolean)
-            .join(' · ') || '[Insert small caption / rank / branch in Google Sheets - text]',
-        bio: p.bio || '[Insert player bio in Google Sheets Bio column - text]',
-        whatWarriorsMeans:
-          p.whatWarriorMeans ||
-          p.whatWarriorsMeans ||
-          '[Insert player testimony in Google Sheets WhatWarriorMeans column - text]',
-        isTestimonyFeatured: Boolean(p.whatWarriorMeans || p.whatWarriorsMeans),
-        jerseyPhotoUrl: isValidImg(p.jerseyPhotoUrl) ? p.jerseyPhotoUrl : undefined,
-        militaryPhotoUrl: isValidImg(p.militaryPhotoUrl) ? p.militaryPhotoUrl : undefined,
-        jerseyPhotoPlaceholder: formatReplaceTag(`${name} jersey photo in Google Sheets`, 'image'),
-        militaryPhotoPlaceholder: formatReplaceTag(`${name} military photo in Google Sheets`, 'image'),
+            : rawRoleBadge
+            ? 'Player'
+            : 'None',
+        shortCaption: [rank, branch, jerseyNumber ? `#${jerseyNumber}` : '', position, hometown]
+          .filter(Boolean)
+          .join(' · '),
+        bio,
+        whatWarriorsMeans,
+        isTestimonyFeatured: Boolean(whatWarriorsMeans),
+        jerseyPhotoUrl,
+        militaryPhotoUrl,
+        jerseyPhotoPlaceholder: '',
+        militaryPhotoPlaceholder: '',
         mediaGallery: Array.isArray(p.mediaGallery)
-          ? p.mediaGallery.map((url: any, idx: number) =>
-              typeof url === 'string'
-                ? { id: `m-${i}-${idx}`, type: 'image', url, caption: `${name} — Media #${idx + 1}` }
-                : url
-            )
+          ? p.mediaGallery
+              .map((url: any, idx: number) =>
+                typeof url === 'string'
+                  ? {
+                      id: `m-${i}-${idx}`,
+                      type: /\.(mp4|webm|mov)$/i.test(url) ? 'video' : 'image',
+                      url: cleanSheetCell(url),
+                      caption: name ? `${name} — Media #${idx + 1}` : `Media #${idx + 1}`,
+                    }
+                  : url
+              )
+              .filter((m: any) => Boolean(m && m.url))
           : [],
         isPlaceholder: false,
       });
@@ -664,30 +691,38 @@ export function parseAppsScriptPayload(payload: {
   if (allStaff.length === 0) {
     if (Array.isArray(payload?.board)) {
       payload.board.forEach((b: any, i: number) => {
-        const isValidImg = (u?: string) => Boolean(u && !u.startsWith('['));
+        const name = cleanSheetCell(b.name);
+        const role = cleanSheetCell(b.role);
+        const caption = cleanSheetCell(b.caption);
+        const photoUrl = cleanSheetCell(b.photoUrl) || undefined;
+        if (!name && !role && !caption && !photoUrl) return;
         allStaff.push({
           id: b.id || `as-board-${i}`,
-          name: b.name || '[Insert Name in Google Sheets - text]',
-          role: b.role || `Board Officer #${i + 1}`,
+          name,
+          role,
           category: 'Board',
-          caption: b.caption || '[Insert small caption in Google Sheets - text]',
-          photoUrl: isValidImg(b.photoUrl) ? b.photoUrl : undefined,
-          photoPlaceholder: formatReplaceTag(`${b.role || 'Board'} photo in Google Sheets`, 'image'),
+          caption,
+          photoUrl,
+          photoPlaceholder: '',
           isPlaceholder: false,
         });
       });
     }
     if (Array.isArray(payload?.coaches)) {
       payload.coaches.forEach((c: any, i: number) => {
-        const isValidImg = (u?: string) => Boolean(u && !u.startsWith('['));
+        const name = cleanSheetCell(c.name);
+        const role = cleanSheetCell(c.role);
+        const caption = cleanSheetCell(c.caption);
+        const photoUrl = cleanSheetCell(c.photoUrl) || undefined;
+        if (!name && !role && !caption && !photoUrl) return;
         allStaff.push({
           id: c.id || `as-coach-${i}`,
-          name: c.name || '[Insert Name in Google Sheets - text]',
-          role: c.role || `Coach #${i + 1}`,
+          name,
+          role,
           category: 'Coach',
-          caption: c.caption || '[Insert small caption in Google Sheets - text]',
-          photoUrl: isValidImg(c.photoUrl) ? c.photoUrl : undefined,
-          photoPlaceholder: formatReplaceTag(`${c.role || 'Coach'} photo in Google Sheets`, 'image'),
+          caption,
+          photoUrl,
+          photoPlaceholder: '',
           isPlaceholder: false,
         });
       });
@@ -696,19 +731,26 @@ export function parseAppsScriptPayload(payload: {
 
   if (allEvents.length === 0 && Array.isArray(payload?.events)) {
     payload.events.forEach((ev: any, i: number) => {
-      const isValidImg = (u?: string) => Boolean(u && !u.startsWith('['));
-      const imgCandidate = ev.imageUrl || ev.flyerPlaceholder;
+      const title = cleanSheetCell(ev.title);
+      const date = cleanSheetCell(ev.date);
+      const time = cleanSheetCell(ev.time);
+      const location = cleanSheetCell(ev.location);
+      const category = cleanSheetCell(ev.category);
+      const description = cleanSheetCell(ev.description);
+      const imgCandidate = cleanSheetCell(ev.imageUrl || ev.flyerPlaceholder);
+      const externalUrl = cleanSheetCell(ev.externalUrl);
+      if (!title && !date && !location && !description && !imgCandidate) return;
       allEvents.push({
         id: ev.id || `as-event-${i}`,
-        title: ev.title || `Event #${i + 1}`,
-        date: ev.date || '[Insert event date - text]',
-        time: ev.time || undefined,
-        location: ev.location || '[Insert event location - text]',
-        category: ev.category || 'Event',
-        description: ev.description || '[Insert description of this event - text]',
-        imageUrl: isValidImg(imgCandidate) ? imgCandidate : undefined,
-        placeholderBanner: formatReplaceTag(`event image for ${ev.title || 'Event'}`, 'image'),
-        externalUrl: ev.externalUrl || undefined,
+        title,
+        date,
+        time: time || undefined,
+        location,
+        category,
+        description,
+        imageUrl: imgCandidate || undefined,
+        placeholderBanner: '',
+        externalUrl: externalUrl || undefined,
         isPlaceholder: false,
       });
     });
@@ -720,7 +762,7 @@ export function parseAppsScriptPayload(payload: {
     events: allEvents,
     fans: allFans,
     sponsors: allSponsors,
-    detectedTabs: playerTabs,
+    detectedTabs: Array.from(playerTabsSet),
   };
 }
 
@@ -751,7 +793,7 @@ export function filterPlayers(
         return false;
       }
     }
-    if (rankFilter && rankFilter !== 'All' && p.rank !== rankFilter) {
+    if (rankFilter && rankFilter !== 'All' && p.rank !== rankFilter && p.position !== rankFilter) {
       return false;
     }
     if (branchFilter && branchFilter !== 'All' && p.branch !== branchFilter) {
