@@ -23,17 +23,14 @@ import {
 
 const BECOME_WARRIOR_HEADERS = [
   'Verified',
-  'Last Name',
-  'First Name',
-  'Military Branch',
-  'Military Rank',
-  'Service Era',
-  'Hometown',
-  'Role Badge',
-  'MilitaryPhotoUrl',
-  'Bio',
-  'WhatWarriorMeans',
-  'MediaUrlsCsv',
+  'FirstName',
+  'LastName',
+  'Branch',
+  'Phone',
+  'Email',
+  'PreferredContact',
+  'Experience',
+  'QuestionsInfo',
 ] as const;
 
 test('extractSpreadsheetId extracts exact user spreadsheet ID', () => {
@@ -148,17 +145,14 @@ test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verif
         [...BECOME_WARRIOR_HEADERS],
         [
           'TRUE',
-          'Unmerged',
           'Applicant',
+          'Unmerged',
           'U.S. Marine Corps',
-          'SGT',
-          '2015-2021',
-          'Newark, NJ',
-          'Veteran',
-          '/api/firebase-image?id=wr_pending',
-          'Should not be read directly from Become Warrior tab by website',
-          'Quote',
-          '/api/firebase-image?id=wr_media1',
+          '(973) 555-0199',
+          'applicant@example.com',
+          'Text, Email',
+          'Played adult rec league defense for 4 years.',
+          'Looking forward to skating with the team.',
         ],
       ],
       Roster: [
@@ -212,14 +206,12 @@ test('formSecurity validates non-empty fields, email/phone formats, honeypot, fi
   const emptyCheck = validateWarriorApplicationInput({
     firstName: '',
     lastName: '',
-    militaryBranch: '',
-    militaryRank: '',
-    serviceEra: '',
-    hometown: '',
-    roleBadge: '',
-    bio: '',
-    whatWarriorMeans: '',
-    mediaCount: 0,
+    branch: '',
+    phone: '',
+    email: '',
+    preferredContact: [],
+    experience: '',
+    questionsInfo: '',
   });
   assert.equal(emptyCheck.ok, false);
 
@@ -227,14 +219,12 @@ test('formSecurity validates non-empty fields, email/phone formats, honeypot, fi
   const validCheck = validateWarriorApplicationInput({
     firstName: 'Carlos',
     lastName: 'Rivera',
-    militaryBranch: 'U.S. Navy',
-    militaryRank: 'PO1',
-    serviceEra: '2014-2022',
-    hometown: 'Hoboken, NJ',
-    roleBadge: 'Veteran',
-    bio: 'Served 8 years in the U.S. Navy.',
-    whatWarriorMeans: 'Healing and camaraderie on the ice.',
-    mediaCount: 2,
+    branch: 'U.S. Navy',
+    phone: '(973) 555-0199',
+    email: 'carlos@gardenstatewarriors.org',
+    preferredContact: ['Text', 'Email'],
+    experience: 'Played 5 years of adult league hockey as defenseman.',
+    questionsInfo: 'Available for weekend practices.',
   });
   assert.equal(validCheck.ok, true);
 

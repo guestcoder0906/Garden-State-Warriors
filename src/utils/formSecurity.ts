@@ -162,28 +162,28 @@ export function recordSuccessfulFormSubmission(
 
 /**
  * Validates the "Become a Warrior" form so empty or spammy applications are never accepted.
+ * Fields: First Name, Last Name, Branch, Phone, Email, Preferred Method of Contact, Hockey Experience, Additional Questions/Info.
  */
 export function validateWarriorApplicationInput(input: {
   firstName: string;
   lastName: string;
-  militaryBranch: string;
-  militaryRank: string;
-  serviceEra: string;
-  hometown: string;
-  roleBadge: string;
-  bio: string;
-  whatWarriorMeans: string;
-  mediaCount: number;
+  branch: string;
+  phone: string;
+  email: string;
+  preferredContact: string[] | string;
+  experience: string;
+  questionsInfo: string;
 }): { ok: boolean; error?: string } {
   const firstName = sanitizeFormText(input.firstName, 80);
   const lastName = sanitizeFormText(input.lastName, 80);
-  const militaryBranch = sanitizeFormText(input.militaryBranch, 80);
-  const militaryRank = sanitizeFormText(input.militaryRank, 80);
-  const serviceEra = sanitizeFormText(input.serviceEra, 80);
-  const hometown = sanitizeFormText(input.hometown, 120);
-  const roleBadge = sanitizeFormText(input.roleBadge, 80);
-  const bio = sanitizeFormText(input.bio, 1500);
-  const whatWarriorMeans = sanitizeFormText(input.whatWarriorMeans, 1500);
+  const branch = sanitizeFormText(input.branch, 80);
+  const phone = sanitizeFormText(input.phone, 40);
+  const email = sanitizeFormText(input.email, 120);
+  const preferredContactStr = Array.isArray(input.preferredContact)
+    ? sanitizeFormText(input.preferredContact.join(', '), 80)
+    : sanitizeFormText(input.preferredContact, 80);
+  const experience = sanitizeFormText(input.experience, 2000);
+  const questionsInfo = sanitizeFormText(input.questionsInfo, 2000);
 
   if (!firstName || !lastName) {
     return {
@@ -192,42 +192,52 @@ export function validateWarriorApplicationInput(input: {
     };
   }
 
-  if (!militaryBranch) {
+  if (!branch) {
     return {
       ok: false,
-      error: 'Please select or enter your Military Branch.',
+      error: 'Please select your Military Branch.',
     };
   }
 
-  if (!militaryRank && !serviceEra && !hometown && !bio && !whatWarriorMeans) {
+  if (!phone || !isValidPhoneNumber(phone)) {
     return {
       ok: false,
-      error:
-        'Please complete at least one additional service detail (Military Rank, Service Era, Hometown, Bio, or What the Warriors Means to You).',
+      error: 'Please enter a valid Phone number.',
     };
   }
 
-  if (input.mediaCount > 5) {
+  if (!email || !isValidEmailAddress(email)) {
     return {
       ok: false,
-      error: 'You can upload a maximum of 5 media images.',
+      error: 'Please enter a valid Email address.',
+    };
+  }
+
+  if (!preferredContactStr) {
+    return {
+      ok: false,
+      error: 'Please select at least one Preferred Method of Contact.',
+    };
+  }
+
+  if (!experience) {
+    return {
+      ok: false,
+      error: 'Please share your Hockey Experience.',
     };
   }
 
   if (
     containsSpamPatterns(firstName) ||
     containsSpamPatterns(lastName) ||
-    containsSpamPatterns(militaryBranch) ||
-    containsSpamPatterns(militaryRank) ||
-    containsSpamPatterns(serviceEra) ||
-    containsSpamPatterns(hometown) ||
-    containsSpamPatterns(roleBadge) ||
-    containsSpamPatterns(bio) ||
-    containsSpamPatterns(whatWarriorMeans)
+    containsSpamPatterns(branch) ||
+    containsSpamPatterns(preferredContactStr) ||
+    containsSpamPatterns(experience) ||
+    containsSpamPatterns(questionsInfo)
   ) {
     return {
       ok: false,
-      error: 'Links or invalid HTML/spam content are not allowed in player profile text fields.',
+      error: 'Links or invalid HTML/spam content are not allowed in application text fields.',
     };
   }
 

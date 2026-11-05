@@ -202,15 +202,12 @@ export async function submitSponsorToGoogleSheet(
 export interface WarriorApplicationInput {
   firstName: string;
   lastName: string;
-  militaryBranch: string;
-  militaryRank: string;
-  serviceEra: string;
-  hometown: string;
-  roleBadge: string;
-  militaryPhotoUrl: string;
-  bio: string;
-  whatWarriorMeans: string;
-  mediaUrls: string[];
+  branch: string;
+  phone: string;
+  email: string;
+  preferredContact: string[];
+  experience: string;
+  questionsInfo: string;
   honeypot?: string;
   captchaToken?: string;
 }
@@ -218,7 +215,7 @@ export interface WarriorApplicationInput {
 /**
  * Submits the direct website "Become a Warrior" form to the Google Sheet (`Become Warrior` tab)
  * via Google Apps Script (`doPost`).
- * Verified rows are automatically appended to the Players Roster tab.
+ * Verified rows are automatically synced to the last available row in the `Garden State Warriors Roster` tab.
  */
 export async function submitWarriorToGoogleSheet(
   input: WarriorApplicationInput
@@ -228,36 +225,22 @@ export async function submitWarriorToGoogleSheet(
     import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
     '';
 
-  const cleanMilitaryPhotoUrl =
-    input.militaryPhotoUrl &&
-    !input.militaryPhotoUrl.startsWith('data:') &&
-    !input.militaryPhotoUrl.startsWith('blob:')
-      ? input.militaryPhotoUrl.trim()
-      : '';
-
-  const cleanMediaUrls = (input.mediaUrls || [])
-    .slice(0, 5)
-    .map((u) => (u || '').trim())
-    .filter((u) => u && !u.startsWith('data:') && !u.startsWith('blob:'));
+  const preferredContactStr = Array.isArray(input.preferredContact)
+    ? input.preferredContact.join(', ')
+    : String(input.preferredContact || '').trim();
 
   const bodyPayload = {
-    action: 'submitWarrior',
+    action: 'submitWarriorApplication',
     verified: false,
-    timestampSubmitted: new Date().toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-    }),
-    lastName: input.lastName.trim(),
     firstName: input.firstName.trim(),
-    militaryBranch: input.militaryBranch.trim(),
-    militaryRank: input.militaryRank.trim(),
-    serviceEra: input.serviceEra.trim(),
-    hometown: input.hometown.trim(),
-    roleBadge: input.roleBadge.trim(),
-    militaryPhotoUrl: cleanMilitaryPhotoUrl,
-    bio: input.bio.trim(),
-    whatWarriorMeans: input.whatWarriorMeans.trim(),
-    mediaUrlsCsv: cleanMediaUrls.join(', '),
-    mediaUrls: cleanMediaUrls,
+    lastName: input.lastName.trim(),
+    branch: input.branch.trim(),
+    militaryBranch: input.branch.trim(),
+    phone: input.phone.trim(),
+    email: input.email.trim(),
+    preferredContact: preferredContactStr,
+    experience: input.experience.trim(),
+    questionsInfo: input.questionsInfo.trim(),
     honeypot: input.honeypot || '',
     captchaToken: input.captchaToken || '',
   };
@@ -279,7 +262,7 @@ export async function submitWarriorToGoogleSheet(
         return {
           ok: true,
           message:
-            'Thank you for your service! Your Warrior application has been submitted to the Become Warrior tab in Google Sheets. Once verified, your profile will automatically appear on the Players Roster.',
+            'Thank you for your service! Your Warrior application has been submitted to the Become Warrior tab in Google Sheets. Once verified, your profile will automatically be added to the Garden State Warriors Roster.',
         };
       }
     } catch {
@@ -301,7 +284,7 @@ export async function submitWarriorToGoogleSheet(
         return {
           ok: true,
           message:
-            'Thank you for your service! Your Warrior application has been submitted to the Become Warrior tab in Google Sheets. Once verified, your profile will automatically appear on the Players Roster.',
+            'Thank you for your service! Your Warrior application has been submitted to the Become Warrior tab in Google Sheets. Once verified, your profile will automatically be added to the Garden State Warriors Roster.',
         };
       }
     }
