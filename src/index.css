@@ -23,3 +23,12 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* Hide floating Google reCAPTCHA bottom-right corner overlay (inline widget + Privacy/Terms links are rendered inside the forms) */
+.grecaptcha-badge {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  display: none !important;
+}
+

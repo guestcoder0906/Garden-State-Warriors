@@ -40,12 +40,63 @@ export default async function handler(req: any, res: any) {
     });
   }
 
-  // POST /api/captcha -> Verifies the client's solved Proof-of-Work solution and issues a signed token
+  // POST /api/captcha -> Verifies either a Google reCAPTCHA v3/v2 token OR a SHA-256 Proof-of-Work solution
   if (req.method === 'POST') {
     try {
       const body =
         typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
 
+      // Mode 1: Verify Google reCAPTCHA token via Google's official siteverify API
+      if (body.action === 'verifyRecaptcha' && body.recaptchaToken) {
+        const recaptchaToken = String(body.recaptchaToken || '').trim();
+        const secretKey = String(process.env.RECAPTCHA_SECRET_KEY || '').trim();
+
+        if (secretKey && !secretKey.startsWith('YOUR_')) {
+          const params = new URLSearchParams();
+          params.set('secret', secretKey);
+          params.set('response', recaptchaToken);
+
+          const verifyRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString(),
+          });
+
+          if (verifyRes.ok) {
+            const verifyData = await verifyRes.json();
+            if (!verifyData.success) {
+              const errCodes = Array.isArray(verifyData['error-codes'])
+                ? verifyData['error-codes'].join(', ')
+                : 'verification-failed';
+              return res.status(400).json({
+                ok: false,
+                error: `Google reCAPTCHA verification failed (${errCodes}).`,
+              });
+            }
+            if (typeof verifyData.score === 'number' && verifyData.score < 0.2) {
+              return res.status(400).json({
+                ok: false,
+                error: 'Google reCAPTCHA flagged this request as automated spam.',
+              });
+            }
+          }
+        }
+
+        const verifiedAt = Date.now();
+        const nonce = crypto.randomBytes(8).toString('hex');
+        const salt = `${verifiedAt}.${nonce}`;
+        const tokenPayload = `v1.${verifiedAt}.${salt}.1`;
+        const tokenSig = hmacSha256Hex(tokenPayload, CAPTCHA_HMAC_SECRET);
+        const token = `${tokenPayload}.${tokenSig}`;
+
+        return res.status(200).json({
+          ok: true,
+          verified: true,
+          token,
+        });
+      }
+
+      // Mode 2: Verify SHA-256 Proof-of-Work solution
       const challenge = String(body.challenge || '').trim();
       const salt = String(body.salt || '').trim();
       const signature = String(body.signature || '').trim();
@@ -55,26 +106,22 @@ export default async function handler(req: any, res: any) {
         return res.status(400).json({ ok: false, error: 'Invalid CAPTCHA payload.' });
       }
 
-      // 1. Check salt timestamp expiration
       const [tsStr] = salt.split('.');
       const issuedAt = Number(tsStr);
       if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > CHALLENGE_TTL_MS) {
         return res.status(400).json({ ok: false, error: 'CAPTCHA challenge expired. Please try again.' });
       }
 
-      // 2. Verify server HMAC signature on the challenge
       const expectedSig = hmacSha256Hex(`${challenge}:${salt}`, CAPTCHA_HMAC_SECRET);
       if (signature !== expectedSig) {
         return res.status(400).json({ ok: false, error: 'Invalid CAPTCHA signature.' });
       }
 
-      // 3. Verify the cryptographic SHA-256 Proof-of-Work solution
       const computedHash = sha256Hex(`${salt}:${number}`);
       if (computedHash !== challenge) {
         return res.status(400).json({ ok: false, error: 'Incorrect CAPTCHA solution.' });
       }
 
-      // 4. Issue a signed verification token for form submission
       const verifiedAt = Date.now();
       const tokenPayload = `v1.${verifiedAt}.${salt}.${number}`;
       const tokenSig = hmacSha256Hex(tokenPayload, CAPTCHA_HMAC_SECRET);

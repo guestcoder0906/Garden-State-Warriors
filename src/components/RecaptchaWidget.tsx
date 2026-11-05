@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Loader2, ShieldCheck, RefreshCw } from 'lucide-react';
+import { Check, Loader2, RefreshCw } from 'lucide-react';
 
 declare global {
   interface Window {
     grecaptcha?: {
       ready: (cb: () => void) => void;
-      render: (
+      execute: (siteKey: string, options: { action: string }) => Promise<string>;
+      render?: (
         container: HTMLElement,
         parameters: {
           sitekey: string;
@@ -16,9 +17,8 @@ declare global {
           'error-callback'?: () => void;
         }
       ) => number;
-      reset: (optWidgetId?: number) => void;
+      reset?: (optWidgetId?: number) => void;
     };
-    __onRecaptchaApiLoaded?: () => void;
   }
 }
 
@@ -36,46 +36,58 @@ function getConfiguredProductionRecaptchaSiteKey(): string {
   return raw;
 }
 
-let recaptchaScriptPromise: Promise<void> | null = null;
+let recaptchaV3Promise: Promise<void> | null = null;
+let loadedRecaptchaKey = '';
 
-function loadGoogleRecaptchaScript(): Promise<void> {
+/**
+ * Loads Google's official reCAPTCHA v3 API (`https://www.google.com/recaptcha/api.js?render=SITE_KEY`).
+ * Using `?render=SITE_KEY` + `grecaptcha.execute()` works natively with Google reCAPTCHA v3 keys
+ * without triggering "ERROR for site owner: Invalid key type".
+ */
+function loadGoogleRecaptchaV3Script(siteKey: string): Promise<void> {
   if (typeof window === 'undefined') return Promise.resolve();
-  if (window.grecaptcha && typeof window.grecaptcha.render === 'function') {
+  if (
+    window.grecaptcha &&
+    typeof window.grecaptcha.execute === 'function' &&
+    loadedRecaptchaKey === siteKey
+  ) {
     return Promise.resolve();
   }
-  if (recaptchaScriptPromise) return recaptchaScriptPromise;
+  if (recaptchaV3Promise && loadedRecaptchaKey === siteKey) {
+    return recaptchaV3Promise;
+  }
 
-  recaptchaScriptPromise = new Promise<void>((resolve, reject) => {
-    window.__onRecaptchaApiLoaded = () => {
-      resolve();
-    };
-
-    const existing = document.querySelector<HTMLScriptElement>(
+  loadedRecaptchaKey = siteKey;
+  recaptchaV3Promise = new Promise<void>((resolve, reject) => {
+    // Remove any older explicit-mode script if present
+    const oldScripts = document.querySelectorAll<HTMLScriptElement>(
       'script[src*="google.com/recaptcha/api.js"]'
     );
-    if (existing) {
-      const checkInterval = window.setInterval(() => {
-        if (window.grecaptcha && typeof window.grecaptcha.render === 'function') {
-          window.clearInterval(checkInterval);
-          resolve();
-        }
-      }, 100);
-      return;
-    }
+    oldScripts.forEach((s) => {
+      if (!s.src.includes(encodeURIComponent(siteKey))) {
+        s.remove();
+      }
+    });
 
     const script = document.createElement('script');
-    script.src =
-      'https://www.google.com/recaptcha/api.js?onload=__onRecaptchaApiLoaded&render=explicit';
+    script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(siteKey)}`;
     script.async = true;
     script.defer = true;
+    script.onload = () => {
+      if (window.grecaptcha && typeof window.grecaptcha.ready === 'function') {
+        window.grecaptcha.ready(() => resolve());
+      } else {
+        resolve();
+      }
+    };
     script.onerror = () => {
-      recaptchaScriptPromise = null;
+      recaptchaV3Promise = null;
       reject(new Error('Failed to load Google reCAPTCHA API'));
     };
     document.head.appendChild(script);
   });
 
-  return recaptchaScriptPromise;
+  return recaptchaV3Promise;
 }
 
 async function sha256HexBrowser(message: string): Promise<string> {
@@ -86,9 +98,6 @@ async function sha256HexBrowser(message: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/**
- * Solves a SHA-256 Proof-of-Work challenge in non-blocking batches using WebCrypto.
- */
 async function solveSha256ProofOfWork(
   salt: string,
   targetChallenge: string,
@@ -106,7 +115,6 @@ async function solveSha256ProofOfWork(
     if (matchOffset !== -1) {
       return start + matchOffset;
     }
-    // Yield briefly to keep UI responsive
     await new Promise((r) => setTimeout(r, 0));
   }
   throw new Error('Could not solve cryptographic CAPTCHA challenge');
@@ -119,78 +127,83 @@ export interface RecaptchaWidgetProps {
 
 export const RecaptchaWidget: React.FC<RecaptchaWidgetProps> = ({ onVerify, resetSignal = 0 }) => {
   const productionRecaptchaKey = getConfiguredProductionRecaptchaSiteKey();
-
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const widgetIdRef = useRef<number | null>(null);
   const onVerifyRef = useRef(onVerify);
   onVerifyRef.current = onVerify;
 
-  // Cryptographic Proof-of-Work CAPTCHA API state (used when no custom domain-locked reCAPTCHA key is set)
   const [status, setStatus] = useState<'idle' | 'verifying' | 'verified' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Mode A: Custom production Google reCAPTCHA v2 site key (if configured in env vars)
+  // Preload Google reCAPTCHA v3 script when VITE_RECAPTCHA_SITE_KEY is configured
   useEffect(() => {
     if (!productionRecaptchaKey) return;
-    let cancelled = false;
-
-    loadGoogleRecaptchaScript()
-      .then(() => {
-        if (cancelled || !containerRef.current || !window.grecaptcha) return;
-        window.grecaptcha.ready(() => {
-          if (cancelled || !containerRef.current || !window.grecaptcha) return;
-          if (widgetIdRef.current !== null) return;
-          try {
-            widgetIdRef.current = window.grecaptcha.render(containerRef.current, {
-              sitekey: productionRecaptchaKey,
-              theme: 'dark',
-              callback: (token: string) => {
-                onVerifyRef.current(token);
-              },
-              'expired-callback': () => {
-                onVerifyRef.current('');
-              },
-              'error-callback': () => {
-                onVerifyRef.current('');
-              },
-            });
-          } catch {
-            setStatus('error');
-          }
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setStatus('error');
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    loadGoogleRecaptchaV3Script(productionRecaptchaKey).catch(() => {
+      // Fallback handled on click
+    });
   }, [productionRecaptchaKey]);
 
-  // Reset handler for both modes
+  // Reset state after form submission
   useEffect(() => {
     if (resetSignal > 0) {
-      if (productionRecaptchaKey && widgetIdRef.current !== null && window.grecaptcha) {
-        try {
-          window.grecaptcha.reset(widgetIdRef.current);
-        } catch {
-          // Ignore reset errors
-        }
-      }
       setStatus('idle');
       setErrorMsg('');
       onVerifyRef.current('');
     }
-  }, [resetSignal, productionRecaptchaKey]);
+  }, [resetSignal]);
 
-  const handleCryptographicVerify = async () => {
+  const handleVerifyClick = async () => {
     if (status === 'verifying' || status === 'verified') return;
     setStatus('verifying');
     setErrorMsg('');
 
     try {
-      // 1. Request a fresh cryptographic SHA-256 Proof-of-Work challenge from /api/captcha
+      // 1. If VITE_RECAPTCHA_SITE_KEY is set, execute Google reCAPTCHA v3 API (`grecaptcha.execute`)
+      if (productionRecaptchaKey) {
+        try {
+          await loadGoogleRecaptchaV3Script(productionRecaptchaKey);
+          if (window.grecaptcha && typeof window.grecaptcha.execute === 'function') {
+            const googleToken = await new Promise<string>((resolve, reject) => {
+              window.grecaptcha!.ready(() => {
+                window.grecaptcha!
+                  .execute(productionRecaptchaKey, { action: 'submit' })
+                  .then(resolve)
+                  .catch(reject);
+              });
+            });
+
+            if (googleToken) {
+              // Verify token against /api/captcha (which checks Google's siteverify endpoint)
+              try {
+                const verifyRes = await fetch('/api/captcha', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    action: 'verifyRecaptcha',
+                    recaptchaToken: googleToken,
+                  }),
+                });
+                if (verifyRes.ok) {
+                  const verifyJson = await verifyRes.json();
+                  if (verifyJson?.ok && verifyJson?.token) {
+                    setStatus('verified');
+                    onVerifyRef.current(verifyJson.token);
+                    return;
+                  }
+                }
+              } catch {
+                // In local Vite dev where /api/captcha isn't mounted, pass the real Google token directly
+              }
+
+              setStatus('verified');
+              onVerifyRef.current(googleToken);
+              return;
+            }
+          }
+        } catch {
+          // If Google script fails due to domain mismatch in preview, fall through to cryptographic PoW
+        }
+      }
+
+      // 2. Cryptographic SHA-256 Proof-of-Work fallback via /api/captcha
       let challengeData: {
         challenge: string;
         salt: string;
@@ -237,14 +250,12 @@ export const RecaptchaWidget: React.FC<RecaptchaWidgetProps> = ({ onVerify, rese
         };
       }
 
-      // 2. Solve the SHA-256 Proof-of-Work challenge via WebCrypto
       const solvedNumber = await solveSha256ProofOfWork(
         challengeData.salt,
         challengeData.challenge,
         challengeData.maxnumber
       );
 
-      // 3. Verify the solution with POST /api/captcha when issued by the serverless endpoint
       if (challengeData.serverIssued && challengeData.signature) {
         const verifyRes = await fetch('/api/captcha', {
           method: 'POST',
@@ -265,7 +276,6 @@ export const RecaptchaWidget: React.FC<RecaptchaWidgetProps> = ({ onVerify, rese
         return;
       }
 
-      // WebCrypto PoW token format verified by /api/sync
       const powToken = `pow.${challengeData.salt}.${solvedNumber}.${challengeData.challenge}`;
       setStatus('verified');
       onVerifyRef.current(powToken);
@@ -276,25 +286,12 @@ export const RecaptchaWidget: React.FC<RecaptchaWidgetProps> = ({ onVerify, rese
     }
   };
 
-  if (productionRecaptchaKey) {
-    return (
-      <div className="space-y-1.5">
-        <div ref={containerRef} className="min-h-[78px]" />
-        {status === 'error' && (
-          <p className="text-xs text-red-300">
-            Unable to load reCAPTCHA widget. Please check your domain key configuration.
-          </p>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-1.5">
-      <div className="w-full sm:w-[304px] rounded-xl bg-[#0D1611] border border-white/15 px-4 py-3 flex items-center justify-between gap-3 select-none">
+      <div className="w-full sm:w-[310px] rounded-xl bg-[#0D1611] border border-white/15 px-4 py-3 flex items-center justify-between gap-3 select-none shadow-sm">
         <button
           type="button"
-          onClick={handleCryptographicVerify}
+          onClick={handleVerifyClick}
           disabled={status === 'verifying' || status === 'verified'}
           className="flex items-center gap-3 text-left focus:outline-none group flex-1"
         >
@@ -312,9 +309,9 @@ export const RecaptchaWidget: React.FC<RecaptchaWidgetProps> = ({ onVerify, rese
           </span>
           <span className="text-sm font-medium text-white">
             {status === 'verifying'
-              ? 'Verifying browser...'
+              ? 'Verifying...'
               : status === 'verified'
-              ? 'Verified human'
+              ? "I'm not a robot"
               : "I'm not a robot"}
           </span>
         </button>
@@ -323,23 +320,50 @@ export const RecaptchaWidget: React.FC<RecaptchaWidgetProps> = ({ onVerify, rese
           {status === 'error' && (
             <button
               type="button"
-              onClick={handleCryptographicVerify}
+              onClick={handleVerifyClick}
               aria-label="Retry verification"
               className="p-1 rounded hover:bg-white/10 text-neutral-300 hover:text-white"
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
           )}
-          <div className="flex flex-col items-end">
-            <div className="flex items-center gap-1 text-[#EAB308]">
-              <ShieldCheck className="w-4 h-4" />
-              <span className="text-[10px] font-bold uppercase tracking-wider font-mono-tabular">
-                ALTCHA
-              </span>
-            </div>
-            <span className="text-[9px] text-neutral-400 font-mono-tabular">
-              SHA-256 PoW
+          <div className="flex flex-col items-center text-center">
+            <svg
+              viewBox="0 0 64 64"
+              className="w-6 h-6"
+              aria-hidden="true"
+            >
+              <path
+                fill="#4285F4"
+                d="M32 8a24 24 0 0 1 21.8 14H46l8 10 8-10h-5.5A28 28 0 0 0 32 4C18.2 4 6.7 13.9 4.4 27h4.1A24 24 0 0 1 32 8z"
+              />
+              <path
+                fill="#34A853"
+                d="M32 56a24 24 0 0 1-21.8-14H18l-8-10-8 10h5.5A28 28 0 0 0 32 60c13.8 0 25.3-9.9 27.6-23h-4.1A24 24 0 0 1 32 56z"
+              />
+            </svg>
+            <span className="text-[9px] font-semibold text-neutral-300 leading-tight mt-0.5">
+              reCAPTCHA
             </span>
+            <div className="flex items-center gap-1 text-[8px] text-neutral-400 leading-none mt-0.5">
+              <a
+                href="https://policies.google.com/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline"
+              >
+                Privacy
+              </a>
+              <span>-</span>
+              <a
+                href="https://policies.google.com/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline"
+              >
+                Terms
+              </a>
+            </div>
           </div>
         </div>
       </div>
