@@ -334,6 +334,13 @@ export default function App() {
     const applySheetData = (sheetData: DynamicSyncResult) => {
       if (!mounted) return;
       setPlayers(sheetData.players);
+      setSelectedPlayerProfile((prev) => {
+        if (!prev) return null;
+        const stillExists = sheetData.players.find(
+          (p) => p.name.trim().toLowerCase() === prev.name.trim().toLowerCase()
+        );
+        return stillExists || null;
+      });
       setStaff(sheetData.staff);
       setEvents(sheetData.events);
       setFans(sheetData.fans || []);

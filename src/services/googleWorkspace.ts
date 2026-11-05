@@ -22,7 +22,14 @@ export interface DynamicSyncResult {
   detectedTabs: string[];
 }
 
-const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v3';
+const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v6';
+const LEGACY_CACHE_KEYS = [
+  'gsw_verified_sheet_cache_v1',
+  'gsw_verified_sheet_cache_v2',
+  'gsw_verified_sheet_cache_v3',
+  'gsw_verified_sheet_cache_v4',
+  'gsw_verified_sheet_cache_v5',
+];
 let inMemoryCache: DynamicSyncResult | null = null;
 let inFlightSyncPromise: Promise<DynamicSyncResult | null> | null = null;
 
@@ -34,6 +41,9 @@ export function getCachedSheetSyncResult(): DynamicSyncResult | null {
   if (inMemoryCache) return inMemoryCache;
   if (typeof window === 'undefined') return null;
   try {
+    for (const oldKey of LEGACY_CACHE_KEYS) {
+      window.localStorage.removeItem(oldKey);
+    }
     const raw = window.localStorage.getItem(SHEET_CACHE_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as DynamicSyncResult;
@@ -458,8 +468,8 @@ async function fetchAppsScriptOrApiPayload(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 7500);
       const separator = appsScriptUrl.includes('?') ? '&' : '?';
-      // Simple GET request with no custom headers avoids CORS preflight on Apps Script redirects
-      const res = await fetch(`${appsScriptUrl}${separator}_t=${Date.now()}`, {
+      // Pass nocache=1&_t=... so Apps Script CacheService never serves stale/removed rows
+      const res = await fetch(`${appsScriptUrl}${separator}nocache=1&_t=${Date.now()}`, {
         method: 'GET',
         cache: 'no-store',
         signal: controller.signal,
@@ -480,7 +490,7 @@ async function fetchAppsScriptOrApiPayload(
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
-    const apiRes = await fetch(`/api/sync?_t=${Date.now()}`, {
+    const apiRes = await fetch(`/api/sync?nocache=1&_t=${Date.now()}`, {
       cache: 'no-store',
       signal: controller.signal,
     });
@@ -511,9 +521,9 @@ async function fetchAppsScriptOrApiPayload(
 }
 
 /**
- * Merges two sync results (e.g., Apps Script + Direct gviz/tq) so that:
- * - No tab is ever blank if either source succeeded for that tab
- * - In-cell image URLs extracted by Apps Script enrich corresponding items from gviz/tq
+ * Merges two sync results (Apps Script + Direct gviz/tq) without EVER resurrecting removed rows:
+ * - `gvizRes` (direct live query to Google Sheets) is the authoritative source of which rows currently exist in the sheet.
+ * - `appsScriptRes` enriches matching existing rows with any in-cell `CellImage.getContentUrl()` URLs that `gviz/tq` cannot see.
  */
 function mergeDynamicSyncResults(
   appsScriptRes: DynamicSyncResult | null,
@@ -526,22 +536,88 @@ function mergeDynamicSyncResults(
   const a = appsScriptRes!;
   const g = gvizRes!;
 
-  const players = a.players.length >= g.players.length ? a.players : g.players;
+  // Use g.players as the authoritative list of rows currently in the Roster sheet,
+  // enriched with any in-cell images from matching players in a.players
+  const aPlayerByName = new Map<string, PlayerProfile>();
+  for (const ap of a.players) {
+    const key = (ap.name || '').trim().toLowerCase();
+    if (key) aPlayerByName.set(key, ap);
+  }
 
-  // Merge Board and Coach staff members separately so neither category is lost
-  const aBoard = a.staff.filter((s) => s.category === 'Board');
-  const gBoard = g.staff.filter((s) => s.category === 'Board');
-  const board = aBoard.length >= gBoard.length ? aBoard : gBoard;
+  const players: PlayerProfile[] = g.players.map((gp) => {
+    const key = (gp.name || '').trim().toLowerCase();
+    const ap = key ? aPlayerByName.get(key) : undefined;
+    if (!ap) return gp;
+    return {
+      ...gp,
+      jerseyPhotoUrl: gp.jerseyPhotoUrl || ap.jerseyPhotoUrl,
+      militaryPhotoUrl: gp.militaryPhotoUrl || ap.militaryPhotoUrl,
+      mediaGallery: gp.mediaGallery.length > 0 ? gp.mediaGallery : ap.mediaGallery,
+    };
+  });
 
-  const aCoaches = a.staff.filter((s) => s.category === 'Coach');
-  const gCoaches = g.staff.filter((s) => s.category === 'Coach');
-  const coaches = aCoaches.length >= gCoaches.length ? aCoaches : gCoaches;
+  // Enrich Board and Coach staff members from Apps Script without resurrecting deleted rows
+  const mergeStaffCategory = (category: 'Board' | 'Coach'): StaffMember[] => {
+    const gList = g.staff.filter((s) => s.category === category);
+    const aList = a.staff.filter((s) => s.category === category);
+    if (gList.length === 0 && aList.length > 0 && !g.detectedTabs.includes(category)) {
+      return aList;
+    }
+    return gList.map((gs, idx) => {
+      const match =
+        aList.find(
+          (as) =>
+            as.name &&
+            gs.name &&
+            as.name.trim().toLowerCase() === gs.name.trim().toLowerCase()
+        ) || aList[idx];
+      if (!match) return gs;
+      return {
+        ...gs,
+        photoUrl: gs.photoUrl || match.photoUrl,
+        militaryPhotoUrl: gs.militaryPhotoUrl || match.militaryPhotoUrl,
+        mediaGallery:
+          gs.mediaGallery && gs.mediaGallery.length > 0 ? gs.mediaGallery : match.mediaGallery,
+      };
+    });
+  };
 
-  const staff = [...board, ...coaches];
-  const events = a.events.length >= g.events.length ? a.events : g.events;
-  const fans = a.fans.length >= g.fans.length ? a.fans : g.fans;
-  const sponsors = a.sponsors.length >= g.sponsors.length ? a.sponsors : g.sponsors;
-  const detectedTabs = Array.from(new Set([...a.detectedTabs, ...g.detectedTabs]));
+  const staff = [...mergeStaffCategory('Board'), ...mergeStaffCategory('Coach')];
+
+  const events = g.events.map((ge, idx) => {
+    const match =
+      a.events.find(
+        (ae) =>
+          ae.title &&
+          ge.title &&
+          ae.title.trim().toLowerCase() === ge.title.trim().toLowerCase()
+      ) || a.events[idx];
+    return match ? { ...ge, imageUrl: ge.imageUrl || match.imageUrl } : ge;
+  });
+
+  const fans = g.fans.map((gf, idx) => {
+    const match =
+      a.fans.find(
+        (af) =>
+          af.title &&
+          gf.title &&
+          af.title.trim().toLowerCase() === gf.title.trim().toLowerCase()
+      ) || a.fans[idx];
+    return match ? { ...gf, photoUrl: gf.photoUrl || match.photoUrl } : gf;
+  });
+
+  const sponsors = g.sponsors.map((gs, idx) => {
+    const match =
+      a.sponsors.find(
+        (as) =>
+          as.name &&
+          gs.name &&
+          as.name.trim().toLowerCase() === gs.name.trim().toLowerCase()
+      ) || a.sponsors[idx];
+    return match ? { ...gs, logoUrl: gs.logoUrl || match.logoUrl } : gs;
+  });
+
+  const detectedTabs = Array.from(new Set([...g.detectedTabs, ...a.detectedTabs]));
 
   return {
     players,
@@ -635,36 +711,32 @@ export async function syncVerifiedGoogleSheet(
       import.meta.env.VITE_GOOGLE_SPREADSHEET_ID || VERIFIED_SPREADSHEET_ID;
     const spreadsheetId = extractSpreadsheetId(rawSheetId) || VERIFIED_SPREADSHEET_ID;
 
-    let fastDelivered = false;
+    let mergeCompleted = false;
 
     const gvizPromise = fetchDirectGvizAllTabs(spreadsheetId).then(async (res) => {
-      if (res && !fastDelivered) {
-        fastDelivered = true;
+      if (res && !mergeCompleted) {
         saveCachedSheetSyncResult(res);
-        if (onFastResult) onFastResult(res);
+        if (onFastResult && !mergeCompleted) onFastResult(res);
         const hydrated = await hydrateFirebaseImagesClientSide(res);
-        if (onFastResult) onFastResult(hydrated);
+        if (!mergeCompleted) {
+          saveCachedSheetSyncResult(hydrated);
+          if (onFastResult) onFastResult(hydrated);
+        }
       }
       return res;
     });
 
-    const appsScriptPromise = fetchAppsScriptOrApiPayload(appsScriptUrl).then(async (res) => {
-      if (res && !fastDelivered) {
-        fastDelivered = true;
-        saveCachedSheetSyncResult(res);
-        if (onFastResult) onFastResult(res);
-        const hydrated = await hydrateFirebaseImagesClientSide(res);
-        if (onFastResult) onFastResult(hydrated);
-      }
-      return res;
-    });
+    const appsScriptPromise = fetchAppsScriptOrApiPayload(appsScriptUrl);
 
     const [gvizRes, appsScriptRes] = await Promise.all([gvizPromise, appsScriptPromise]);
+    mergeCompleted = true;
+
     const merged = mergeDynamicSyncResults(appsScriptRes, gvizRes);
 
     if (merged) {
-      saveCachedSheetSyncResult(merged);
-      return await hydrateFirebaseImagesClientSide(merged);
+      const hydratedMerged = await hydrateFirebaseImagesClientSide(merged);
+      saveCachedSheetSyncResult(hydratedMerged);
+      return hydratedMerged;
     }
 
     return null;

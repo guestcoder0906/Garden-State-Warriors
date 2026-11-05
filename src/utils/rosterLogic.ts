@@ -859,9 +859,24 @@ export function parseAppsScriptPayload(payload: {
     }
   }
 
-  // 2. Also support structured arrays (`players`, `board`, `coaches`, `events`, `fans`, `sponsors`)
-  if (allPlayers.length === 0 && Array.isArray(payload?.players) && payload.players.length > 0) {
+  // 2. Also support structured arrays (`players`, `board`, `coaches`, `events`, `fans`, `sponsors`) when raw `sheets` 2D arrays are not present
+  const hasRosterSheetInPayload = tabNames.some(
+    (t) =>
+      !/^(board|staff|officers|board and staff|coaches|coach|coaching|coaching staff|events|event|schedule|calendar|fans|fan|fan wall|supporters|family|sponsors|sponsor|partners|become warrior|become a warrior|becomewarrior|warrior applications)$/i.test(
+        t.trim()
+      )
+  );
+
+  if (
+    !hasRosterSheetInPayload &&
+    allPlayers.length === 0 &&
+    Array.isArray(payload?.players) &&
+    payload.players.length > 0
+  ) {
     payload.players.forEach((p: any, i: number) => {
+      if (String(p?.id || '').startsWith('verified-warrior')) {
+        return;
+      }
       const firstName = cleanSheetCell(p.firstName);
       const lastName = cleanSheetCell(p.lastName);
       const rawFull = cleanSheetCell(p.fullName || p.name);

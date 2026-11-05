@@ -209,7 +209,7 @@ export default async function handler(req: any, res: any) {
       !appsScriptUrl.includes('YOUR_')
     ) {
       const separator = appsScriptUrl.includes('?') ? '&' : '?';
-      const r = await fetch(`${appsScriptUrl}${separator}_t=${Date.now()}`, {
+      const r = await fetch(`${appsScriptUrl}${separator}nocache=1&_t=${Date.now()}`, {
         headers: {
           Accept: 'application/json',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
