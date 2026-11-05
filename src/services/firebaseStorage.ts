@@ -66,7 +66,7 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Validate connection to Firestore on boot
+// Validate connection to Firestore on boot (100% client-side)
 async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
@@ -77,6 +77,16 @@ async function testConnection() {
   }
 }
 testConnection();
+
+function base64ToObjectUrl(base64Payload: string, mimeType: string): string {
+  const binaryStr = atob(base64Payload);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: mimeType });
+  return URL.createObjectURL(blob);
+}
 
 /**
  * Compresses an uploaded image file in the browser so that it is crisp (up to 900px)
@@ -114,14 +124,11 @@ async function encodeImageFileForFirebase(
           reject(new Error('Canvas context unavailable'));
           return;
         }
-        // Keep transparency for PNGs if small enough, otherwise flatten on dark/white or use PNG/JPEG
         const isPng = file.type === 'image/png';
         const outputMime = isPng ? 'image/png' : 'image/jpeg';
-        let encodedDataUrl = canvas.toDataURL(outputMime, quality);
         ctx.drawImage(img, 0, 0, width, height);
-        encodedDataUrl = canvas.toDataURL(outputMime, quality);
+        let encodedDataUrl = canvas.toDataURL(outputMime, quality);
 
-        // If PNG is larger than 650KB, re-encode as high-quality JPEG so it never exceeds Firestore's 1MB limit
         let finalMime = outputMime;
         if (encodedDataUrl.length > 650000) {
           finalMime = 'image/jpeg';
@@ -145,8 +152,9 @@ async function encodeImageFileForFirebase(
   });
 }
 
-// In-memory cache of resolved Firebase asset Blob/Object URLs for instant rendering
+// In-memory cache of resolved Firebase asset Object URLs for instant client-side rendering
 const firebaseAssetUrlCache = new Map<string, string>();
+const inFlightAssetPromises = new Map<string, Promise<string | null>>();
 
 /**
  * Extracts the Firebase assetId from:
@@ -172,16 +180,14 @@ export function extractFirebaseAssetId(rawUrl: string): string | null {
 }
 
 /**
- * Uploads a Sponsor Logo / Flyer file permanently to the Firebase server
+ * Uploads a Sponsor Logo / Flyer file permanently to the Firebase server (100% client-side)
  * (`/sponsor_assets/{assetId}` in Firestore database `ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012`)
- * and returns a real, permanent HTTP image URL (`https://<domain>/api/firebase-image?id={assetId}`).
- *
- * Never returns a base64 string. Throws if the upload fails.
+ * and returns the permanent HTTP URL to store in Google Sheets plus an immediate client-side preview URL.
  */
 export async function uploadSponsorImageToFirebase(
   file: File,
   sponsorName = ''
-): Promise<{ url: string; assetId: string }> {
+): Promise<{ url: string; previewUrl: string; assetId: string }> {
   const { mimeType, base64Payload } = await encodeImageFileForFirebase(file);
 
   const sanitizedBase = (file.name || 'logo')
@@ -210,7 +216,10 @@ export async function uploadSponsorImageToFirebase(
     handleFirestoreError(error, OperationType.CREATE, docPath);
   }
 
-  // Construct the permanent HTTP image URL served from /api/firebase-image?id={assetId}
+  // Cache the client-side ObjectURL immediately so it renders in 0ms without any server roundtrip
+  const previewUrl = base64ToObjectUrl(base64Payload, mimeType);
+  firebaseAssetUrlCache.set(assetId, previewUrl);
+
   const origin =
     typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
@@ -219,41 +228,58 @@ export async function uploadSponsorImageToFirebase(
 
   return {
     url: permanentUrl,
+    previewUrl,
     assetId,
   };
 }
 
 /**
- * Fetches an uploaded sponsor image directly from the Firebase server by assetId
- * and returns a browser Object URL (or data URL) as a direct fallback if /api/firebase-image
- * is ever accessed from a static-only host.
+ * Fetches an uploaded sponsor image 100% client-side directly from the Firebase server by assetId
+ * using the client Firebase SDK (`getDoc(doc(db, 'sponsor_assets', assetId))`).
  */
 export async function resolveFirebaseAssetDirect(assetId: string): Promise<string | null> {
   if (!assetId) return null;
   const cached = firebaseAssetUrlCache.get(assetId);
   if (cached) return cached;
 
-  const docPath = `sponsor_assets/${assetId}`;
-  try {
-    const snap = await getDoc(doc(db, 'sponsor_assets', assetId));
-    if (!snap.exists()) return null;
-    const data = snap.data();
-    if (!data?.imageData || !data?.mimeType) return null;
+  const existingPromise = inFlightAssetPromises.get(assetId);
+  if (existingPromise) return existingPromise;
 
-    const binaryStr = atob(String(data.imageData));
-    const bytes = new Uint8Array(binaryStr.length);
-    for (let i = 0; i < binaryStr.length; i++) {
-      bytes[i] = binaryStr.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: String(data.mimeType) });
-    const objectUrl = URL.createObjectURL(blob);
-    firebaseAssetUrlCache.set(assetId, objectUrl);
-    return objectUrl;
-  } catch (error) {
+  const promise = (async () => {
+    const docPath = `sponsor_assets/${assetId}`;
     try {
-      handleFirestoreError(error, OperationType.GET, docPath);
-    } catch {
-      return null;
+      const snap = await getDoc(doc(db, 'sponsor_assets', assetId));
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      if (!data?.imageData || !data?.mimeType) return null;
+
+      const objectUrl = base64ToObjectUrl(String(data.imageData), String(data.mimeType));
+      firebaseAssetUrlCache.set(assetId, objectUrl);
+      return objectUrl;
+    } catch (error) {
+      try {
+        handleFirestoreError(error, OperationType.GET, docPath);
+      } catch {
+        return null;
+      }
+    } finally {
+      inFlightAssetPromises.delete(assetId);
     }
-  }
+  })();
+
+  inFlightAssetPromises.set(assetId, promise);
+  return promise;
+}
+
+/**
+ * If a URL from Google Sheets is a Firebase asset URL (`/api/firebase-image?id=<assetId>` or
+ * `firestore.googleapis.com/.../sponsor_assets/<assetId>`), resolves it 100% client-side
+ * via the Firebase SDK so no server is required to display the image.
+ */
+export async function resolveSheetUrlIfFirebase(rawUrl?: string): Promise<string | undefined> {
+  if (!rawUrl) return rawUrl;
+  const assetId = extractFirebaseAssetId(rawUrl);
+  if (!assetId) return rawUrl;
+  const resolved = await resolveFirebaseAssetDirect(assetId);
+  return resolved || rawUrl;
 }

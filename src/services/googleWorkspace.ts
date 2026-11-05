@@ -8,7 +8,10 @@ import {
   extractSpreadsheetId,
   parseAppsScriptPayload,
 } from '../utils/rosterLogic';
-import { uploadSponsorImageToFirebase } from './firebaseStorage';
+import {
+  uploadSponsorImageToFirebase,
+  resolveSheetUrlIfFirebase,
+} from './firebaseStorage';
 
 export interface DynamicSyncResult {
   players: PlayerProfile[];
@@ -426,10 +429,62 @@ function mergeDynamicSyncResults(
 }
 
 /**
+ * Resolves any Firebase asset URLs (`/api/firebase-image?id=...` or `firestore.googleapis.com/.../sponsor_assets/...`)
+ * 100% client-side in the browser via the Firebase SDK so no server is needed to render uploaded images.
+ */
+async function hydrateFirebaseImagesClientSide(
+  result: DynamicSyncResult
+): Promise<DynamicSyncResult> {
+  const [sponsors, staff, fans, events, players] = await Promise.all([
+    Promise.all(
+      result.sponsors.map(async (sp) => ({
+        ...sp,
+        logoUrl: await resolveSheetUrlIfFirebase(sp.logoUrl),
+      }))
+    ),
+    Promise.all(
+      result.staff.map(async (st) => ({
+        ...st,
+        photoUrl: await resolveSheetUrlIfFirebase(st.photoUrl),
+        militaryPhotoUrl: await resolveSheetUrlIfFirebase(st.militaryPhotoUrl),
+      }))
+    ),
+    Promise.all(
+      result.fans.map(async (fn) => ({
+        ...fn,
+        photoUrl: await resolveSheetUrlIfFirebase(fn.photoUrl),
+      }))
+    ),
+    Promise.all(
+      result.events.map(async (ev) => ({
+        ...ev,
+        imageUrl: await resolveSheetUrlIfFirebase(ev.imageUrl),
+      }))
+    ),
+    Promise.all(
+      result.players.map(async (pl) => ({
+        ...pl,
+        jerseyPhotoUrl: await resolveSheetUrlIfFirebase(pl.jerseyPhotoUrl),
+        militaryPhotoUrl: await resolveSheetUrlIfFirebase(pl.militaryPhotoUrl),
+      }))
+    ),
+  ]);
+
+  return {
+    ...result,
+    sponsors,
+    staff,
+    fans,
+    events,
+    players,
+  };
+}
+
+/**
  * Dynamically fetches all tabs from the verified Google Sheet (`1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s`)
  * by running Direct Google Sheets `gviz/tq` AND Google Apps Script `doGet` in parallel:
  * - Whichever resolves first immediately triggers `onFastResult` (typically < 300ms) so the UI renders fast.
- * - Once both settle, merges them and caches the result in memory + localStorage.
+ * - Once both settle, merges them, caches the result in localStorage, and hydrates any Firebase image URLs client-side.
  */
 export async function syncVerifiedGoogleSheet(
   onFastResult?: (fastData: DynamicSyncResult) => void
@@ -451,20 +506,24 @@ export async function syncVerifiedGoogleSheet(
 
     let fastDelivered = false;
 
-    const gvizPromise = fetchDirectGvizAllTabs(spreadsheetId).then((res) => {
+    const gvizPromise = fetchDirectGvizAllTabs(spreadsheetId).then(async (res) => {
       if (res && !fastDelivered) {
         fastDelivered = true;
         saveCachedSheetSyncResult(res);
         if (onFastResult) onFastResult(res);
+        const hydrated = await hydrateFirebaseImagesClientSide(res);
+        if (onFastResult) onFastResult(hydrated);
       }
       return res;
     });
 
-    const appsScriptPromise = fetchAppsScriptOrApiPayload(appsScriptUrl).then((res) => {
+    const appsScriptPromise = fetchAppsScriptOrApiPayload(appsScriptUrl).then(async (res) => {
       if (res && !fastDelivered) {
         fastDelivered = true;
         saveCachedSheetSyncResult(res);
         if (onFastResult) onFastResult(res);
+        const hydrated = await hydrateFirebaseImagesClientSide(res);
+        if (onFastResult) onFastResult(hydrated);
       }
       return res;
     });
@@ -474,9 +533,10 @@ export async function syncVerifiedGoogleSheet(
 
     if (merged) {
       saveCachedSheetSyncResult(merged);
+      return await hydrateFirebaseImagesClientSide(merged);
     }
 
-    return merged;
+    return null;
   };
 
   inFlightSyncPromise = run();

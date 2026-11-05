@@ -111,6 +111,7 @@ export default function App() {
   const [sponsorWebsiteError, setSponsorWebsiteError] = useState<string>('');
   const [sponsorMessage, setSponsorMessage] = useState<string>('');
   const [sponsorFirebaseLogoUrl, setSponsorFirebaseLogoUrl] = useState<string>('');
+  const [sponsorFirebasePreviewUrl, setSponsorFirebasePreviewUrl] = useState<string>('');
   const [sponsorFirebaseAssetId, setSponsorFirebaseAssetId] = useState<string>('');
   const [sponsorLogoFile, setSponsorLogoFile] = useState<File | null>(null);
   const [sponsorLogoFileName, setSponsorLogoFileName] = useState<string>('');
@@ -155,12 +156,14 @@ export default function App() {
     setSponsorLogoFile(file);
     setSponsorLogoFileName(file.name);
     setSponsorFirebaseLogoUrl('');
+    setSponsorFirebasePreviewUrl('');
     setSponsorFirebaseAssetId('');
     setSponsorStatus(null);
     setSponsorLogoUploading(true);
     try {
       const uploaded = await uploadSponsorImageToFirebase(file, sponsorName);
       setSponsorFirebaseLogoUrl(uploaded.url);
+      setSponsorFirebasePreviewUrl(uploaded.previewUrl);
       setSponsorFirebaseAssetId(uploaded.assetId);
     } catch (err) {
       setSponsorLogoFile(null);
@@ -231,6 +234,7 @@ export default function App() {
       setSponsorWebsiteError('');
       setSponsorMessage('');
       setSponsorFirebaseLogoUrl('');
+      setSponsorFirebasePreviewUrl('');
       setSponsorFirebaseAssetId('');
       setSponsorLogoFile(null);
       setSponsorLogoFileName('');
@@ -2060,6 +2064,7 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             setSponsorFirebaseLogoUrl('');
+                            setSponsorFirebasePreviewUrl('');
                             setSponsorFirebaseAssetId('');
                             setSponsorLogoFile(null);
                             setSponsorLogoFileName('');
@@ -2082,7 +2087,7 @@ export default function App() {
                   {sponsorFirebaseLogoUrl && (
                     <div className="p-3 rounded-xl bg-[#070C09] border border-white/10 flex flex-col sm:flex-row sm:items-center gap-3">
                       <img
-                        src={sponsorFirebaseLogoUrl}
+                        src={sponsorFirebasePreviewUrl || sponsorFirebaseLogoUrl}
                         alt="Uploaded Sponsor Logo Preview"
                         onError={handleFirebaseImgError}
                         className="h-16 w-auto object-contain rounded bg-black/40 p-1.5 border border-white/10 self-start"
