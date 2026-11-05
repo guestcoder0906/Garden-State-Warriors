@@ -62,64 +62,16 @@ export interface SponsorSubmissionInput {
   website: string;
   message: string;
   logoUrl: string;
+  firebaseAssetId?: string;
   logoFile?: File | null;
-  logoBase64?: string;
-  logoMimeType?: string;
   logoFileName?: string;
-}
-
-/**
- * Compresses an uploaded Sponsor Logo / Flyer image file on a canvas so its data URL
- * stays well under the Google Sheets 50,000-character cell limit (< 22,000 chars)
- * and can also be decoded by Google Apps Script DriveApp to create a hosted Google image URL.
- */
-export async function compressSponsorImageToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed to read image file.'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('Invalid image file.'));
-      img.onload = () => {
-        const maxDim = 320;
-        let width = img.width;
-        let height = img.height;
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(String(reader.result || ''));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        let dataUrl = canvas.toDataURL('image/webp', 0.72);
-        if (dataUrl.length > 24000 || !dataUrl.startsWith('data:image/webp')) {
-          dataUrl = canvas.toDataURL('image/jpeg', 0.68);
-        }
-        if (dataUrl.length > 24000) {
-          dataUrl = canvas.toDataURL('image/jpeg', 0.52);
-        }
-        resolve(dataUrl);
-      };
-      img.src = String(reader.result || '');
-    };
-    reader.readAsDataURL(file);
-  });
 }
 
 /**
  * Submits the direct website "Become a Sponsor" form to the Google Sheet (`Sponsors` tab)
  * via Google Apps Script (`doPost`).
+ * Permanently uploads the image to the Firebase server first if not already uploaded,
+ * and stores only the real HTTP URL (`https://.../api/firebase-image?id=...`) in Google Sheets.
  */
 export async function submitSponsorToGoogleSheet(
   input: SponsorSubmissionInput
@@ -130,29 +82,28 @@ export async function submitSponsorToGoogleSheet(
     '';
 
   let finalLogoUrl = (input.logoUrl || '').trim();
-  let logoBase64 = input.logoBase64 || '';
-  let logoMimeType = input.logoMimeType || 'image/jpeg';
-  let logoFileName = input.logoFileName || 'sponsor-logo.jpg';
+  let firebaseAssetId = (input.firebaseAssetId || '').trim();
+  const logoFileName = input.logoFileName || input.logoFile?.name || 'sponsor-logo.jpg';
 
-  // Step 1: If a File object was provided, upload to Firebase Storage for a public Firebase URL
-  if (input.logoFile) {
-    logoFileName = input.logoFile.name || logoFileName;
-    const firebaseUrl = await uploadSponsorImageToFirebase(input.logoFile);
-    if (firebaseUrl) {
-      finalLogoUrl = firebaseUrl;
-    }
+  // Never allow local base64 or blob URLs to be sent to Google Sheets
+  if (finalLogoUrl.startsWith('data:') || finalLogoUrl.startsWith('blob:')) {
+    finalLogoUrl = '';
   }
 
-  // Extract raw base64 payload if we also have a data:image/... URL
-  if (input.logoUrl && input.logoUrl.startsWith('data:image/')) {
-    const commaIdx = input.logoUrl.indexOf(',');
-    if (commaIdx > 0) {
-      const headerPart = input.logoUrl.slice(0, commaIdx);
-      const mimeMatch = headerPart.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64$/i);
-      if (mimeMatch && mimeMatch[1]) {
-        logoMimeType = mimeMatch[1];
-      }
-      logoBase64 = input.logoUrl.slice(commaIdx + 1);
+  // If a File was selected and hasn't been uploaded to Firebase yet, upload it permanently now
+  if (!finalLogoUrl && input.logoFile) {
+    try {
+      const uploaded = await uploadSponsorImageToFirebase(input.logoFile, input.name);
+      finalLogoUrl = uploaded.url;
+      firebaseAssetId = uploaded.assetId;
+    } catch (err) {
+      return {
+        ok: false,
+        message:
+          err instanceof Error
+            ? `Failed to upload image to Firebase server: ${err.message}`
+            : 'Failed to upload image to Firebase server. Please try again.',
+      };
     }
   }
 
@@ -170,8 +121,7 @@ export async function submitSponsorToGoogleSheet(
     message: input.message.trim(),
     description: input.message.trim(),
     logoUrl: finalLogoUrl,
-    logoBase64,
-    logoMimeType,
+    firebaseAssetId,
     logoFileName,
   };
 

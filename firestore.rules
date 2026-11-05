@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net: Default-deny all reads and writes
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Reusable Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // 3. Validation Blueprint for SponsorAsset (/sponsor_assets/{assetId})
+    function isValidSponsorAsset(data, assetId) {
+      return data.keys().hasAll(['assetId', 'fileName', 'mimeType', 'imageData', 'sponsorName', 'createdAt']) &&
+        data.keys().hasOnly(['assetId', 'fileName', 'mimeType', 'imageData', 'sponsorName', 'createdAt']) &&
+        data.assetId is string &&
+        data.assetId == assetId &&
+        data.assetId.size() >= 3 &&
+        data.assetId.size() <= 128 &&
+        data.assetId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.fileName is string &&
+        data.fileName.size() >= 1 &&
+        data.fileName.size() <= 200 &&
+        data.mimeType is string &&
+        data.mimeType.size() >= 6 &&
+        data.mimeType.size() <= 64 &&
+        data.mimeType.matches('^image/(jpeg|jpg|png|webp|gif)$') &&
+        data.imageData is string &&
+        data.imageData.size() >= 16 &&
+        data.imageData.size() <= 950000 &&
+        data.sponsorName is string &&
+        data.sponsorName.size() <= 200 &&
+        data.createdAt == request.time;
+    }
+
+    // 4. Connection Validation Document
+    match /test/connection {
+      allow get: if true;
+      allow list, create, update, delete: if false;
+    }
+
+    // 5. Uploaded Sponsor Images (Immutable after creation, single-document get only)
+    match /sponsor_assets/{assetId} {
+      allow get: if isValidId(assetId);
+      allow list: if false;
+      allow create: if isValidId(assetId) && isValidSponsorAsset(incoming(), assetId);
+      allow update, delete: if false;
+    }
+  }
+}

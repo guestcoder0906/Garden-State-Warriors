@@ -168,7 +168,22 @@ export function normalizeSheetImageUrl(val: unknown): string {
   const candidate = formulaMatch && formulaMatch[1] ? formulaMatch[1].trim() : cleaned;
   if (!candidate || candidate === 'CellImage') return '';
 
-  // 2. Convert Google Drive file sharing links to direct embeddable image URLs
+  // 2. Reject local-only blob: or base64 data:image strings from sheet cells
+  if (candidate.startsWith('blob:') || candidate.startsWith('data:image/')) {
+    return '';
+  }
+
+  // 3. Normalize permanent Firebase server asset URLs (/api/firebase-image?id=<assetId> or /documents/sponsor_assets/<assetId>)
+  const fbApiMatch = candidate.match(/\/api\/firebase-image\?(?:[^#]*&)?id=([a-zA-Z0-9_-]+)/i);
+  const fbDocMatch = candidate.match(/\/documents\/sponsor_assets\/([a-zA-Z0-9_-]+)/i);
+  const fbAssetId = fbApiMatch?.[1] || fbDocMatch?.[1];
+  if (fbAssetId) {
+    const origin =
+      typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
+    return `${origin}/api/firebase-image?id=${encodeURIComponent(fbAssetId)}`;
+  }
+
+  // 4. Convert Google Drive file sharing links to direct embeddable image URLs
   const driveFileMatch = candidate.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
   if (driveFileMatch && driveFileMatch[1]) {
     return `https://lh3.googleusercontent.com/d/${driveFileMatch[1]}`;

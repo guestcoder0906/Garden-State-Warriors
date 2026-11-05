@@ -105,7 +105,7 @@ test('isValidWebsiteUrl validates valid website URLs via regex and rejects inval
   assert.equal(normalizeWebsiteUrl('https://example.com'), 'https://example.com');
 });
 
-test('normalizeSheetImageUrl and splitMediaUrlsCell handle in-cell IMAGE formulas, Drive URLs, single in-cell images, and CSV URLs', () => {
+test('normalizeSheetImageUrl and splitMediaUrlsCell handle Firebase server URLs, in-cell IMAGE formulas, Drive URLs, and reject local base64', () => {
   assert.equal(
     normalizeSheetImageUrl('=IMAGE("https://lh3.googleusercontent.com/d/abc123")'),
     'https://lh3.googleusercontent.com/d/abc123'
@@ -114,6 +114,17 @@ test('normalizeSheetImageUrl and splitMediaUrlsCell handle in-cell IMAGE formula
     normalizeSheetImageUrl('https://drive.google.com/file/d/1xyz987/view?usp=sharing'),
     'https://lh3.googleusercontent.com/d/1xyz987'
   );
+  assert.equal(
+    normalizeSheetImageUrl('https://ais-dev-example.run.app/api/firebase-image?id=sp_1730829500_logo'),
+    '/api/firebase-image?id=sp_1730829500_logo'
+  );
+  assert.equal(
+    normalizeSheetImageUrl(
+      'https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/sp_1730829500_logo'
+    ),
+    '/api/firebase-image?id=sp_1730829500_logo'
+  );
+  assert.equal(normalizeSheetImageUrl('data:image/png;base64,iVBORw0KGgo='), '');
   assert.deepEqual(
     splitMediaUrlsCell('=IMAGE("https://lh3.googleusercontent.com/d/singlePhoto")'),
     ['https://lh3.googleusercontent.com/d/singlePhoto']

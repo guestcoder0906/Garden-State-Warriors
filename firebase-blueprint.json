@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "SponsorAsset": {
+      "title": "SponsorAsset",
+      "description": "Permanently uploaded sponsor logo or flyer image stored on the Firebase server and referenced by URL in Google Sheets.",
+      "type": "object",
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "description": "Unique identifier for the uploaded image asset.",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Sanitized original filename of the uploaded sponsor image.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type of the uploaded image.",
+          "minLength": 6,
+          "maxLength": 64,
+          "pattern": "^image/(jpeg|jpg|png|webp|gif)$"
+        },
+        "imageData": {
+          "type": "string",
+          "description": "Encoded binary payload of the uploaded image stored on the Firebase server.",
+          "minLength": 16,
+          "maxLength": 950000
+        },
+        "sponsorName": {
+          "type": "string",
+          "description": "Optional sponsor name associated with the uploaded image.",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the image was uploaded."
+        }
+      },
+      "required": ["assetId", "fileName", "mimeType", "imageData", "sponsorName", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/sponsor_assets/{assetId}": {
+      "schema": {
+        "$ref": "#/entities/SponsorAsset"
+      },
+      "description": "Publicly readable, immutable uploaded sponsor logo and flyer images."
+    }
+  }
+}

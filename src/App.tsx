@@ -39,11 +39,14 @@ import {
 import {
   syncVerifiedGoogleSheet,
   submitSponsorToGoogleSheet,
-  compressSponsorImageToDataUrl,
   getCachedSheetSyncResult,
   DynamicSyncResult,
 } from './services/googleWorkspace';
-import { uploadSponsorImageToFirebase } from './services/firebaseStorage';
+import {
+  uploadSponsorImageToFirebase,
+  extractFirebaseAssetId,
+  resolveFirebaseAssetDirect,
+} from './services/firebaseStorage';
 import {
   fetchSupabasePlayers,
   isSupabaseConfigured,
@@ -107,8 +110,8 @@ export default function App() {
   const [sponsorWebsite, setSponsorWebsite] = useState<string>('');
   const [sponsorWebsiteError, setSponsorWebsiteError] = useState<string>('');
   const [sponsorMessage, setSponsorMessage] = useState<string>('');
-  const [sponsorLogoDataUrl, setSponsorLogoDataUrl] = useState<string>('');
   const [sponsorFirebaseLogoUrl, setSponsorFirebaseLogoUrl] = useState<string>('');
+  const [sponsorFirebaseAssetId, setSponsorFirebaseAssetId] = useState<string>('');
   const [sponsorLogoFile, setSponsorLogoFile] = useState<File | null>(null);
   const [sponsorLogoFileName, setSponsorLogoFileName] = useState<string>('');
   const [sponsorLogoUploading, setSponsorLogoUploading] = useState<boolean>(false);
@@ -117,6 +120,18 @@ export default function App() {
     type: 'success' | 'error';
     message: string;
   } | null>(null);
+
+  const handleFirebaseImgError = async (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    const imgEl = e.currentTarget;
+    if (imgEl.dataset.fbResolved === '1') return;
+    const assetId = extractFirebaseAssetId(imgEl.src || '');
+    if (!assetId) return;
+    imgEl.dataset.fbResolved = '1';
+    const directObjUrl = await resolveFirebaseAssetDirect(assetId);
+    if (directObjUrl) {
+      imgEl.src = directObjUrl;
+    }
+  };
 
   const toggleSponsorContactMethod = (method: string) => {
     setSponsorPreferredContact((prev) =>
@@ -140,20 +155,22 @@ export default function App() {
     setSponsorLogoFile(file);
     setSponsorLogoFileName(file.name);
     setSponsorFirebaseLogoUrl('');
+    setSponsorFirebaseAssetId('');
+    setSponsorStatus(null);
     setSponsorLogoUploading(true);
     try {
-      const [compressed, firebaseUrl] = await Promise.all([
-        compressSponsorImageToDataUrl(file),
-        uploadSponsorImageToFirebase(file),
-      ]);
-      setSponsorLogoDataUrl(compressed);
-      if (firebaseUrl) {
-        setSponsorFirebaseLogoUrl(firebaseUrl);
-      }
-    } catch {
+      const uploaded = await uploadSponsorImageToFirebase(file, sponsorName);
+      setSponsorFirebaseLogoUrl(uploaded.url);
+      setSponsorFirebaseAssetId(uploaded.assetId);
+    } catch (err) {
+      setSponsorLogoFile(null);
+      setSponsorLogoFileName('');
       setSponsorStatus({
         type: 'error',
-        message: 'Could not process the selected image file. Please try another image.',
+        message:
+          err instanceof Error
+            ? `Could not upload image to Firebase server: ${err.message}`
+            : 'Could not upload image to Firebase server. Please try another image.',
       });
     } finally {
       setSponsorLogoUploading(false);
@@ -179,6 +196,14 @@ export default function App() {
       return;
     }
 
+    if (sponsorLogoUploading) {
+      setSponsorStatus({
+        type: 'error',
+        message: 'Please wait a moment for your image upload to Firebase server to finish.',
+      });
+      return;
+    }
+
     setSponsorWebsiteError('');
     setSponsorSubmitting(true);
     setSponsorStatus(null);
@@ -189,7 +214,8 @@ export default function App() {
       preferredContact: sponsorPreferredContact,
       website: sponsorWebsite.trim(),
       message: sponsorMessage.trim(),
-      logoUrl: sponsorFirebaseLogoUrl || sponsorLogoDataUrl,
+      logoUrl: sponsorFirebaseLogoUrl,
+      firebaseAssetId: sponsorFirebaseAssetId,
       logoFile: sponsorFirebaseLogoUrl ? null : sponsorLogoFile,
       logoFileName: sponsorLogoFileName,
     });
@@ -204,8 +230,8 @@ export default function App() {
       setSponsorWebsite('');
       setSponsorWebsiteError('');
       setSponsorMessage('');
-      setSponsorLogoDataUrl('');
       setSponsorFirebaseLogoUrl('');
+      setSponsorFirebaseAssetId('');
       setSponsorLogoFile(null);
       setSponsorLogoFileName('');
     } else {
@@ -1006,6 +1032,7 @@ export default function App() {
                           <img
                             src={sp.logoUrl}
                             alt={sp.name || 'Sponsor Logo'}
+                            onError={handleFirebaseImgError}
                             className="h-14 w-auto object-contain rounded bg-black/40 p-2 border border-white/10 self-start"
                             referrerPolicy="no-referrer"
                           />
@@ -2028,12 +2055,12 @@ export default function App() {
                         onChange={handleSponsorFileChange}
                         className="hidden"
                       />
-                      {(sponsorLogoDataUrl || sponsorFirebaseLogoUrl) && (
+                      {sponsorFirebaseLogoUrl && (
                         <button
                           type="button"
                           onClick={() => {
-                            setSponsorLogoDataUrl('');
                             setSponsorFirebaseLogoUrl('');
+                            setSponsorFirebaseAssetId('');
                             setSponsorLogoFile(null);
                             setSponsorLogoFileName('');
                           }}
@@ -2046,23 +2073,33 @@ export default function App() {
                   </div>
 
                   {sponsorLogoUploading && (
-                    <p className="text-xs text-[#EAB308] font-mono-tabular">
-                      Uploading image to Firebase Storage...
-                    </p>
+                    <div className="flex items-center gap-2 text-xs text-[#EAB308] font-mono-tabular">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Uploading image permanently to Firebase server...</span>
+                    </div>
                   )}
 
-                  {(sponsorLogoDataUrl || sponsorFirebaseLogoUrl) && (
-                    <div className="p-3 rounded-xl bg-[#070C09] border border-white/10 inline-flex items-center gap-3">
+                  {sponsorFirebaseLogoUrl && (
+                    <div className="p-3 rounded-xl bg-[#070C09] border border-white/10 flex flex-col sm:flex-row sm:items-center gap-3">
                       <img
-                        src={sponsorLogoDataUrl || sponsorFirebaseLogoUrl}
+                        src={sponsorFirebaseLogoUrl}
                         alt="Uploaded Sponsor Logo Preview"
-                        className="h-16 w-auto object-contain rounded bg-black/40 p-1.5 border border-white/10"
+                        onError={handleFirebaseImgError}
+                        className="h-16 w-auto object-contain rounded bg-black/40 p-1.5 border border-white/10 self-start"
                       />
-                      <span className="text-xs text-neutral-300 font-mono-tabular">
-                        {sponsorFirebaseLogoUrl
-                          ? 'Uploaded to Firebase Storage & ready for Google Sheets'
-                          : 'Image ready for Google Sheets upload'}
-                      </span>
+                      <div className="space-y-1 min-w-0">
+                        <span className="text-xs text-emerald-400 font-bold font-mono-tabular block">
+                          Uploaded permanently to Firebase server
+                        </span>
+                        <a
+                          href={sponsorFirebaseLogoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] text-[#EAB308] hover:underline font-mono-tabular break-all block"
+                        >
+                          {sponsorFirebaseLogoUrl}
+                        </a>
+                      </div>
                     </div>
                   )}
                 </div>
