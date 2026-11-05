@@ -117,20 +117,38 @@ test('parseSheetRowsToSponsors only returns sponsors where Verified checkbox is 
   assert.equal(sponsors[0].logoUrl, 'https://example.com/logo.png');
 });
 
-test('Become Warrior tab only appends Verified=TRUE rows to roster and keeps missing Roster fields empty until filled', () => {
+test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verified players appended into Garden State Warriors Roster tab', () => {
   const payload = {
     title: 'Garden State Warriors Roster',
-    tabs: ['Roster', 'Become Warrior'],
+    tabs: ['Garden State Warriors Roster', 'Become Warrior'],
     sheets: {
-      Roster: [
+      'Garden State Warriors Roster': [
         [...EXACT_SHEET_HEADERS],
         ['Miller', 'James', '21', 'F', 'Alpha', 'U.S. Army', 'CPT', '2012-2020', 'Morristown, NJ', 'Captain', '', '', 'Existing roster player.', '', ''],
+        // Row written by Apps Script into the last available row of Garden State Warriors Roster (with Jersey Number, Position, RosterTab, JerseyPhotoUrl still blank)
+        [
+          'Rivera',
+          'Carlos',
+          '',
+          '',
+          '',
+          'U.S. Navy',
+          'PO1',
+          '2014-2022',
+          'Hoboken, NJ',
+          'Purple Heart',
+          '',
+          'https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_mil',
+          'Served 8 years aboard USS New Jersey.',
+          'Brotherhood on and off the ice.',
+          'https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_m1, https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_m2',
+        ],
       ],
       'Become Warrior': [
         [...BECOME_WARRIOR_HEADERS],
         [
-          'FALSE',
-          'Pending',
+          'TRUE',
+          'Unmerged',
           'Applicant',
           'U.S. Marine Corps',
           'SGT',
@@ -138,23 +156,9 @@ test('Become Warrior tab only appends Verified=TRUE rows to roster and keeps mis
           'Newark, NJ',
           'Veteran',
           '/api/firebase-image?id=wr_pending',
-          'Pending applicant bio',
-          'Pending warrior quote',
+          'Should not be read directly from Become Warrior tab by website',
+          'Quote',
           '/api/firebase-image?id=wr_media1',
-        ],
-        [
-          'TRUE',
-          'Rivera',
-          'Carlos',
-          'U.S. Navy',
-          'PO1',
-          '2014-2022',
-          'Hoboken, NJ',
-          'Purple Heart',
-          'https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_mil',
-          'Served 8 years aboard USS New Jersey.',
-          'Brotherhood on and off the ice.',
-          'https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_m1, https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_m2',
         ],
       ],
     },
@@ -163,7 +167,7 @@ test('Become Warrior tab only appends Verified=TRUE rows to roster and keeps mis
   const parsed = parseAppsScriptPayload(payload);
   assert.equal(parsed.players.length, 2);
   const carlos = parsed.players.find((p) => p.name === 'Carlos Rivera');
-  assert.ok(carlos, 'Verified Become Warrior player should be appended to players list');
+  assert.ok(carlos, 'Player row in Garden State Warriors Roster tab should be parsed');
   assert.equal(carlos.jerseyNumber, '');
   assert.equal(carlos.position, '');
   assert.equal(carlos.tierTab, '');

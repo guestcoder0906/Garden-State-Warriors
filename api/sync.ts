@@ -221,7 +221,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // 2. Fallback: Fetch the main Roster tab plus optional Events, Board, Coaches, Fans, Sponsors, and Become Warrior tabs in parallel
+    // 2. Fallback: Fetch the main Roster tab plus optional Events, Board, Coaches, Fans, and Sponsors tabs in parallel
     const [
       rosterRows,
       eventsRows,
@@ -229,7 +229,6 @@ export default async function handler(req: any, res: any) {
       coachesRows,
       fansRows,
       sponsorsRows,
-      becomeWarriorRows,
     ] = await Promise.all([
       fetchGvizSheetTab(spreadsheetId),
       fetchGvizSheetTab(spreadsheetId, 'Events'),
@@ -237,7 +236,6 @@ export default async function handler(req: any, res: any) {
       fetchGvizSheetTab(spreadsheetId, 'Coaches'),
       fetchGvizSheetTab(spreadsheetId, 'Fans'),
       fetchGvizSheetTab(spreadsheetId, 'Sponsors'),
-      fetchGvizSheetTab(spreadsheetId, 'Become Warrior'),
     ]);
 
     const sheets: Record<string, string[][]> = {};
@@ -278,13 +276,6 @@ export default async function handler(req: any, res: any) {
       JSON.stringify(sponsorsRows[0]) !== JSON.stringify(rosterRows?.[0])
     ) {
       sheets.Sponsors = sponsorsRows;
-    }
-    if (
-      becomeWarriorRows &&
-      becomeWarriorRows.length > 0 &&
-      JSON.stringify(becomeWarriorRows[0]) !== JSON.stringify(rosterRows?.[0])
-    ) {
-      sheets['Become Warrior'] = becomeWarriorRows;
     }
 
     if (Object.keys(sheets).length > 0) {

@@ -817,32 +817,9 @@ export function parseAppsScriptPayload(payload: {
       allFans.push(...parseSheetRowsToFans(rows));
     } else if (/^(sponsors|sponsor|partners)$/i.test(tabName.trim())) {
       allSponsors.push(...parseSheetRowsToSponsors(rows));
-    } else if (/^(become warrior|become a warrior|becomewarrior)$/i.test(tabName.trim())) {
-      const verifiedWarriors = parseSheetRowsToPlayers(rows, 'Become Warrior');
-      for (const vw of verifiedWarriors) {
-        const key = vw.name.trim().toLowerCase();
-        const existingIdx = allPlayers.findIndex(
-          (existing) => key && existing.name.trim().toLowerCase() === key
-        );
-        if (existingIdx === -1) {
-          allPlayers.push(vw);
-          if (vw.tierTab) playerTabsSet.add(vw.tierTab);
-        } else {
-          // Enrich any fields on the existing Roster entry that are still blank
-          const ex = allPlayers[existingIdx];
-          allPlayers[existingIdx] = {
-            ...ex,
-            branch: ex.branch || vw.branch,
-            rank: ex.rank || vw.rank,
-            yearsOfService: ex.yearsOfService || vw.yearsOfService,
-            hometown: ex.hometown || vw.hometown,
-            bio: ex.bio || vw.bio,
-            whatWarriorsMeans: ex.whatWarriorsMeans || vw.whatWarriorsMeans,
-            militaryPhotoUrl: ex.militaryPhotoUrl || vw.militaryPhotoUrl,
-            mediaGallery: ex.mediaGallery.length > 0 ? ex.mediaGallery : vw.mediaGallery,
-          };
-        }
-      }
+    } else if (/^(become warrior|become a warrior|becomewarrior|warrior applications)$/i.test(tabName.trim())) {
+      // Verified applications are copied by Apps Script into the last available row of the Garden State Warriors Roster tab
+      continue;
     } else {
       const parsedPlayers = parseSheetRowsToPlayers(rows, tabName);
       const inlineStaff = parseSheetRowsToStaff(rows, 'Auto');

@@ -381,7 +381,6 @@ async function fetchDirectGvizAllTabs(spreadsheetId: string): Promise<DynamicSyn
       coachesRows,
       fansRows,
       sponsorsRows,
-      becomeWarriorRows,
     ] = await Promise.all([
       fetchGvizSheetTabDirect(spreadsheetId),
       fetchGvizSheetTabDirect(spreadsheetId, 'Events'),
@@ -389,7 +388,6 @@ async function fetchDirectGvizAllTabs(spreadsheetId: string): Promise<DynamicSyn
       fetchGvizSheetTabDirect(spreadsheetId, 'Coaches'),
       fetchGvizSheetTabDirect(spreadsheetId, 'Fans'),
       fetchGvizSheetTabDirect(spreadsheetId, 'Sponsors'),
-      fetchGvizSheetTabDirect(spreadsheetId, 'Become Warrior'),
     ]);
 
     const sheets: Record<string, string[][]> = {};
@@ -432,13 +430,6 @@ async function fetchDirectGvizAllTabs(spreadsheetId: string): Promise<DynamicSyn
       JSON.stringify(sponsorsRows[0]) !== rosterHeaderSig
     ) {
       sheets.Sponsors = sponsorsRows;
-    }
-    if (
-      becomeWarriorRows &&
-      becomeWarriorRows.length > 0 &&
-      JSON.stringify(becomeWarriorRows[0]) !== rosterHeaderSig
-    ) {
-      sheets['Become Warrior'] = becomeWarriorRows;
     }
 
     if (Object.keys(sheets).length === 0) return null;

@@ -1,0 +1,975 @@
+/**
+ * Garden State Warriors Disabled Veterans Hockey Club
+ * Live Google Sheet -> Website Auto-Sync Web App (GET + POST + onEdit)
+ * Connected to Sheet ID: 1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s
+ *
+ * Features:
+ * - Fast reading of all tabs (Roster, Become Warrior, Board, Coaches, Events, Fans, Sponsors)
+ * - Extracts in-cell uploaded images (Insert > Image > Insert image in cell) via CellImage.getContentUrl()
+ *   only on cells where display text is blank (fast execution)
+ * - Supports =IMAGE("url") formulas, permanent Firebase image URLs (/api/firebase-image?id=... or Firestore URLs),
+ *   and Google Drive sharing links
+ * - Handles "Become a Sponsor" form POST submissions -> "Sponsors" tab (with Verified checkbox)
+ * - Handles "Become a Warrior" form POST submissions -> "Become Warrior" tab (with Verified checkbox)
+ * - Automatically appends Verified players from "Become Warrior" to the "Roster" tab (leaving missing
+ *   fields like Jersey Number, Position, RosterTab, JerseyPhotoUrl blank until manually filled in Sheets)
+ */
+
+const SPREADSHEET_ID = '1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s';
+const CACHE_KEY = 'GSW_SHEET_PAYLOAD_V5';
+const CACHE_TTL_SECONDS = 15;
+
+const BECOME_WARRIOR_HEADERS = [
+  'Verified',
+  'Last Name',
+  'First Name',
+  'Military Branch',
+  'Military Rank',
+  'Service Era',
+  'Hometown',
+  'Role Badge',
+  'MilitaryPhotoUrl',
+  'Bio',
+  'WhatWarriorMeans',
+  'MediaUrlsCsv'
+];
+
+const ROSTER_HEADERS = [
+  'Last Name',
+  'First Name',
+  'Jersey Number',
+  'Position',
+  'RosterTab',
+  'Military Branch',
+  'Military Rank',
+  'Service Era',
+  'Hometown',
+  'Role Badge',
+  'JerseyPhotoUrl',
+  'MilitaryPhotoUrl',
+  'Bio',
+  'WhatWarriorMeans',
+  'MediaUrlsCsv'
+];
+
+function normalizeKey(header) {
+  return String(header || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function getField(rowObj, candidateKeys) {
+  for (var i = 0; i < candidateKeys.length; i++) {
+    var k = normalizeKey(candidateKeys[i]);
+    if (rowObj[k] !== undefined && String(rowObj[k]).trim() !== '') {
+      return String(rowObj[k]).trim();
+    }
+  }
+  return '';
+}
+
+function isPlaceholder(val) {
+  var s = String(val || '').trim();
+  if (!s || s === '--') return true;
+  return /^\[(replace|insert)\b.*\]$/i.test(s);
+}
+
+function cleanVal(val) {
+  var s = String(val || '').trim();
+  return isPlaceholder(s) ? '' : s;
+}
+
+function isVerifiedValue(rawVal) {
+  var v = cleanVal(rawVal).toLowerCase();
+  return (
+    v === 'true' ||
+    v === 'yes' ||
+    v === '1' ||
+    v === 'checked' ||
+    v === '✓' ||
+    v === '☑'
+  );
+}
+
+/**
+ * Normalizes image cell values:
+ * 1. Rejects local base64 data:image/ strings
+ * 2. Extracts URL from =IMAGE("https://...") formula strings
+ * 3. Preserves permanent Firebase image URLs (/api/firebase-image?id=... or Firestore URLs)
+ * 4. Converts Google Drive sharing URLs into direct image URLs
+ */
+function normalizeImageValue(val) {
+  var s = cleanVal(val);
+  if (!s) return '';
+
+  if (/^data:image\//i.test(s) || /^blob:/i.test(s)) {
+    return '';
+  }
+
+  var formulaMatch = s.match(/^=IMAGE\(\s*["']([^"']+)["']/i);
+  if (formulaMatch && formulaMatch[1]) {
+    s = formulaMatch[1].trim();
+  }
+
+  var driveFileMatch = s.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+  if (driveFileMatch && driveFileMatch[1]) {
+    return 'https://lh3.googleusercontent.com/d/' + driveFileMatch[1];
+  }
+
+  var driveIdMatch = s.match(/drive\.google\.com\/(?:open|uc|thumbnail)\?(?:[^#]*&)?id=([a-zA-Z0-9_-]+)/i);
+  if (driveIdMatch && driveIdMatch[1]) {
+    return 'https://lh3.googleusercontent.com/d/' + driveIdMatch[1];
+  }
+
+  return s;
+}
+
+/**
+ * Splits a MediaUrlsCsv cell:
+ * - Multiple comma-separated URLs -> array of normalized URLs
+ * - Single Google Photos / CellImage / Firebase URL -> single-element array
+ */
+function parseMediaCellToList(rawVal) {
+  var trimmed = cleanVal(rawVal);
+  if (!trimmed) return [];
+
+  if (!trimmed.includes(',')) {
+    var single = normalizeImageValue(trimmed);
+    return single ? [single] : [];
+  }
+
+  var parts = trimmed.split(/\s*,\s*(?=https?:\/\/|\/api\/firebase-image|=IMAGE\()/i);
+  if (parts.length > 1) {
+    return parts.map(normalizeImageValue).filter(Boolean);
+  }
+
+  if (/^https?:\/\/[^,\s]*googleusercontent\.com\//i.test(trimmed)) {
+    return [normalizeImageValue(trimmed)];
+  }
+
+  return trimmed.split(',').map(normalizeImageValue).filter(Boolean);
+}
+
+/**
+ * Ensures a sheet tab exists and contains all required headers.
+ */
+function ensureSheetHeaders(ss, tabName, requiredHeaders) {
+  var sheet = ss.getSheetByName(tabName);
+  if (!sheet) {
+    sheet = ss.insertSheet(tabName);
+    sheet.appendRow(requiredHeaders);
+    sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight('bold');
+    return sheet;
+  }
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(requiredHeaders);
+    sheet.getRange(1, 1, 1, requiredHeaders.length).setFontWeight('bold');
+    return sheet;
+  }
+
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var existingHeaders = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  var existingNorm = existingHeaders.map(normalizeKey);
+
+  requiredHeaders.forEach(function(reqHeader) {
+    if (existingNorm.indexOf(normalizeKey(reqHeader)) === -1) {
+      var nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue(reqHeader);
+      existingHeaders.push(reqHeader);
+      existingNorm.push(normalizeKey(reqHeader));
+    }
+  });
+
+  return sheet;
+}
+
+/**
+ * Appends a verified player row from "Become Warrior" into the main "Roster" tab
+ * if a player with the same First Name + Last Name is not already in "Roster".
+ * Missing Roster fields (Jersey Number, Position, RosterTab, JerseyPhotoUrl) remain blank
+ * until manually filled in Google Sheets.
+ */
+function syncVerifiedWarriorToRosterSheet(ss, warriorRowObj) {
+  var firstName = cleanVal(getField(warriorRowObj, ['First Name', 'FirstName', 'First']));
+  var lastName = cleanVal(getField(warriorRowObj, ['Last Name', 'LastName', 'Last']));
+  if (!firstName && !lastName) return false;
+
+  var rosterSheet = ensureSheetHeaders(ss, 'Roster', ROSTER_HEADERS);
+  var lastCol = Math.max(rosterSheet.getLastColumn(), 1);
+  var rosterHeaders = rosterSheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(normalizeKey);
+
+  var firstIdx = rosterHeaders.indexOf('firstname');
+  var lastIdx = rosterHeaders.indexOf('lastname');
+
+  var lastRow = rosterSheet.getLastRow();
+  if (lastRow > 1 && (firstIdx !== -1 || lastIdx !== -1)) {
+    var existingData = rosterSheet.getRange(2, 1, lastRow - 1, lastCol).getDisplayValues();
+    for (var r = 0; r < existingData.length; r++) {
+      var exFirst = firstIdx !== -1 ? String(existingData[r][firstIdx] || '').trim().toLowerCase() : '';
+      var exLast = lastIdx !== -1 ? String(existingData[r][lastIdx] || '').trim().toLowerCase() : '';
+      if (exFirst === firstName.toLowerCase() && exLast === lastName.toLowerCase()) {
+        return false; // Already exists in Roster tab
+      }
+    }
+  }
+
+  var militaryBranch = cleanVal(getField(warriorRowObj, ['Military Branch', 'Branch', 'Service Branch']));
+  var militaryRank = cleanVal(getField(warriorRowObj, ['Military Rank', 'Rank']));
+  var serviceEra = cleanVal(getField(warriorRowObj, ['Service Era', 'Service Era (Years)', 'Years']));
+  var hometown = cleanVal(getField(warriorRowObj, ['Hometown', 'City']));
+  var roleBadge = cleanVal(getField(warriorRowObj, ['Role Badge', 'RoleBadge', 'Role']));
+  var militaryPhotoUrl = normalizeImageValue(getField(warriorRowObj, ['MilitaryPhotoUrl', 'Military Photo']));
+  var bio = cleanVal(getField(warriorRowObj, ['Bio', 'Story', 'Profile Bio']));
+  var whatWarriorMeans = cleanVal(getField(warriorRowObj, ['WhatWarriorMeans', 'What Warrior Means', 'Quote']));
+  var mediaUrlsCsv = cleanVal(getField(warriorRowObj, ['MediaUrlsCsv', 'Media URLs', 'Media']));
+
+  var newRosterRow = new Array(rosterHeaders.length).fill('');
+  for (var i = 0; i < rosterHeaders.length; i++) {
+    var h = rosterHeaders[i];
+    if (h === 'lastname' || h === 'last') {
+      newRosterRow[i] = lastName;
+    } else if (h === 'firstname' || h === 'first') {
+      newRosterRow[i] = firstName;
+    } else if (h === 'militarybranch' || h === 'branch' || h === 'servicebranch') {
+      newRosterRow[i] = militaryBranch;
+    } else if (h === 'militaryrank' || h === 'rank') {
+      newRosterRow[i] = militaryRank;
+    } else if (h === 'serviceera' || h === 'serviceerayears' || h === 'yearsofservice') {
+      newRosterRow[i] = serviceEra;
+    } else if (h === 'hometown' || h === 'city') {
+      newRosterRow[i] = hometown;
+    } else if (h === 'rolebadge' || h === 'role' || h === 'captainbadge') {
+      newRosterRow[i] = roleBadge;
+    } else if (h === 'militaryphotourl' || h === 'militaryphoto') {
+      newRosterRow[i] = militaryPhotoUrl;
+    } else if (h === 'bio' || h === 'story' || h === 'profilebio') {
+      newRosterRow[i] = bio;
+    } else if (h === 'whatwarriormeans' || h === 'whatthewarriorsmeans' || h === 'testimony') {
+      newRosterRow[i] = whatWarriorMeans;
+    } else if (h === 'mediaurlscsv' || h === 'mediaurls' || h === 'media') {
+      newRosterRow[i] = mediaUrlsCsv;
+    }
+    // Jersey Number, Position, RosterTab, and JerseyPhotoUrl remain '' until manually filled in Sheets
+  }
+
+  rosterSheet.appendRow(newRosterRow);
+  return true;
+}
+
+/**
+ * Fast reader that converts a sheet into:
+ * - normalized row objects
+ * - raw 2D string rows (with in-cell CellImage URLs resolved)
+ */
+function readSheetFast(sheet) {
+  if (!sheet) return { objects: [], rawRows: [] };
+  var range = sheet.getDataRange();
+  var displayValues = range.getDisplayValues();
+  if (!displayValues || displayValues.length === 0) {
+    return { objects: [], rawRows: [] };
+  }
+
+  var headers = displayValues[0].map(normalizeKey);
+  var hasBlankCellsInNonHeader = false;
+
+  for (var r = 1; r < displayValues.length; r++) {
+    for (var c = 0; c < displayValues[r].length; c++) {
+      if (!String(displayValues[r][c] || '').trim()) {
+        hasBlankCellsInNonHeader = true;
+        break;
+      }
+    }
+    if (hasBlankCellsInNonHeader) break;
+  }
+
+  var rawValues = hasBlankCellsInNonHeader ? range.getValues() : null;
+  var formulas = hasBlankCellsInNonHeader ? range.getFormulas() : null;
+
+  var objects = [];
+  var rawRows = [displayValues[0].map(function(h) { return String(h || '').trim(); })];
+
+  for (var r = 1; r < displayValues.length; r++) {
+    var rowCells = [];
+    var isBlankRow = true;
+    var obj = {};
+
+    for (var c = 0; c < displayValues[0].length; c++) {
+      var cellStr = String(displayValues[r][c] || '').trim();
+
+      if (!cellStr && rawValues) {
+        var rawCell = rawValues[r][c];
+        if (typeof rawCell === 'boolean') {
+          cellStr = rawCell ? 'TRUE' : 'FALSE';
+        } else if (rawCell && typeof rawCell === 'object') {
+          try {
+            if (typeof rawCell.getContentUrl === 'function') {
+              cellStr = String(rawCell.getContentUrl() || '').trim();
+            } else if (typeof rawCell.getUrl === 'function') {
+              cellStr = String(rawCell.getUrl() || '').trim();
+            }
+          } catch (err) {
+            // Ignore if CellImage URL is not accessible
+          }
+        }
+        if (!cellStr && formulas && formulas[r][c]) {
+          cellStr = normalizeImageValue(formulas[r][c]);
+        }
+      }
+
+      if (/^data:image\//i.test(cellStr) || /^blob:/i.test(cellStr)) {
+        cellStr = '';
+      }
+
+      if (cellStr !== '') {
+        isBlankRow = false;
+      }
+      rowCells.push(cellStr);
+      if (headers[c]) {
+        obj[headers[c]] = cellStr;
+      }
+    }
+
+    if (!isBlankRow) {
+      rawRows.push(rowCells);
+      objects.push(obj);
+    }
+  }
+
+  return { objects: objects, rawRows: rawRows };
+}
+
+/**
+ * Helper to convert a row object from Roster or Verified Become Warrior into a Player object.
+ */
+function buildPlayerFromRow(r, idPrefix, idx) {
+  var firstName = cleanVal(getField(r, ['First Name', 'FirstName', 'First']));
+  var lastName = cleanVal(getField(r, ['Last Name', 'LastName', 'Last']));
+  var fullName = cleanVal(getField(r, ['FullName', 'Name'])) || [firstName, lastName].filter(Boolean).join(' ');
+  var rosterTab = cleanVal(getField(r, ['RosterTab', 'Roster Tab', 'RankTab', 'Squad', 'Division']));
+  var roleBadge = cleanVal(getField(r, ['Role Badge', 'RoleBadge', 'Role', 'CaptainBadge']));
+  var jerseyNumber = cleanVal(getField(r, ['Jersey Number', 'JerseyNumber', 'Number', 'Jersey']));
+  var position = cleanVal(getField(r, ['Position', 'Pos']));
+  var branch = cleanVal(getField(r, ['Military Branch', 'Branch', 'Service Branch']));
+  var militaryRank = cleanVal(getField(r, ['Military Rank', 'Rank']));
+  var serviceEra = cleanVal(getField(r, ['Service Era (Years)', 'Service Era', 'Years of Service', 'ServiceYears']));
+  var hometown = cleanVal(getField(r, ['Hometown', 'City']));
+  var bio = cleanVal(getField(r, ['Bio', 'Story', 'Profile Bio']));
+  var whatWarriorMeans = cleanVal(
+    getField(r, [
+      'WhatWarriorMeans',
+      'What Warrior Means',
+      'What the Warriors Means',
+      'Testimony',
+      'Quote'
+    ])
+  );
+  var jerseyPhotoUrl = normalizeImageValue(getField(r, ['JerseyPhotoUrl', 'Jersey Photo', 'PhotoUrl']));
+  var militaryPhotoUrl = normalizeImageValue(getField(r, ['MilitaryPhotoUrl', 'Military Photo']));
+  var mediaCsvRaw = cleanVal(getField(r, ['MediaUrlsCsv', 'Media URLs', 'Media']));
+  var mediaGallery = parseMediaCellToList(mediaCsvRaw);
+
+  if (
+    !fullName &&
+    !jerseyNumber &&
+    !position &&
+    !branch &&
+    !militaryRank &&
+    !bio &&
+    !whatWarriorMeans &&
+    !jerseyPhotoUrl &&
+    !militaryPhotoUrl
+  ) {
+    return null;
+  }
+
+  return {
+    id: idPrefix + '-' + idx,
+    fullName: fullName,
+    firstName: firstName,
+    lastName: lastName,
+    jerseyNumber: jerseyNumber,
+    position: position,
+    rosterTab: rosterTab,
+    branch: branch,
+    militaryRank: militaryRank,
+    serviceEra: serviceEra,
+    hometown: hometown,
+    bio: bio,
+    whatWarriorMeans: whatWarriorMeans,
+    roleBadge: roleBadge,
+    jerseyPhotoPlaceholder: jerseyPhotoUrl,
+    militaryPhotoPlaceholder: militaryPhotoUrl,
+    mediaGallery: mediaGallery
+  };
+}
+
+function doGet(e) {
+  var noCache = e && e.parameter && e.parameter.nocache === '1';
+  var cache = CacheService.getScriptCache();
+
+  if (!noCache) {
+    var cachedJson = cache.get(CACHE_KEY);
+    if (cachedJson) {
+      return ContentService.createTextOutput(cachedJson).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var allSheets = ss.getSheets();
+
+  var sheetsMap = {};
+  var players = [];
+  var verifiedWarriorPlayers = [];
+  var board = [];
+  var coaches = [];
+  var events = [];
+  var fans = [];
+  var sponsors = [];
+
+  allSheets.forEach(function(sheet) {
+    var tabName = sheet.getName().trim();
+    var tabLower = tabName.toLowerCase();
+    var parsed = readSheetFast(sheet);
+    var rows = parsed.objects;
+    sheetsMap[tabName] = parsed.rawRows;
+
+    // 1. BOARD TAB
+    if (tabLower === 'board' || tabLower === 'board and staff' || tabLower === 'staff') {
+      rows.forEach(function(r, idx) {
+        var role = cleanVal(getField(r, ['Role', 'Role Badge', 'Position', 'Title']));
+        var name = cleanVal(
+          getField(r, ['Name', 'FullName']) ||
+          [cleanVal(getField(r, ['First Name'])), cleanVal(getField(r, ['Last Name']))].filter(Boolean).join(' ')
+        );
+        var caption = cleanVal(getField(r, ['Caption', 'Bio', 'Description']));
+        var photoUrl = normalizeImageValue(getField(r, ['PhotoUrl', 'JerseyPhotoUrl', 'Photo', 'ImageUrl']));
+        var rank = cleanVal(getField(r, ['Military Rank', 'Rank']));
+        var branch = cleanVal(getField(r, ['Military Branch', 'Branch']));
+
+        if (!role && !name && !caption && !photoUrl) return;
+        board.push({
+          id: 'board-' + idx,
+          role: role,
+          name: name,
+          caption: caption,
+          photoUrl: photoUrl,
+          rank: rank,
+          branch: branch
+        });
+      });
+      return;
+    }
+
+    // 2. COACHES TAB
+    if (tabLower === 'coaches' || tabLower === 'coaching staff' || tabLower === 'coach') {
+      rows.forEach(function(r, idx) {
+        var role = cleanVal(getField(r, ['Role', 'Role Badge', 'Position', 'Title']));
+        var name = cleanVal(
+          getField(r, ['Name', 'FullName']) ||
+          [cleanVal(getField(r, ['First Name'])), cleanVal(getField(r, ['Last Name']))].filter(Boolean).join(' ')
+        );
+        var caption = cleanVal(getField(r, ['Caption', 'Bio', 'Description']));
+        var photoUrl = normalizeImageValue(getField(r, ['PhotoUrl', 'JerseyPhotoUrl', 'Photo', 'ImageUrl']));
+        var militaryPhotoUrl = normalizeImageValue(getField(r, ['MilitaryPhotoUrl', 'Military Photo']));
+        var rank = cleanVal(getField(r, ['Military Rank', 'Rank']));
+        var branch = cleanVal(getField(r, ['Military Branch', 'Branch']));
+        var serviceEra = cleanVal(getField(r, ['Service Era (Years)', 'Service Era', 'Years']));
+        var hometown = cleanVal(getField(r, ['Hometown', 'City']));
+        var whatWarriorMeans = cleanVal(getField(r, ['WhatWarriorMeans', 'What Warrior Means', 'Quote']));
+
+        if (!role && !name && !caption && !photoUrl) return;
+        coaches.push({
+          id: 'coach-' + idx,
+          role: role,
+          name: name,
+          caption: caption,
+          photoUrl: photoUrl,
+          militaryPhotoUrl: militaryPhotoUrl,
+          rank: rank,
+          branch: branch,
+          serviceEra: serviceEra,
+          hometown: hometown,
+          whatWarriorMeans: whatWarriorMeans
+        });
+      });
+      return;
+    }
+
+    // 3. EVENTS TAB
+    if (tabLower === 'events' || tabLower === 'schedule') {
+      rows.forEach(function(r, idx) {
+        var title = cleanVal(getField(r, ['Title', 'Event', 'Event Name', 'Name']));
+        var date = cleanVal(getField(r, ['Date', 'Event Date']));
+        var time = cleanVal(getField(r, ['Time', 'Event Time']));
+        var location = cleanVal(getField(r, ['Location', 'Rink', 'Venue']));
+        var category = cleanVal(getField(r, ['Category', 'Type']));
+        var description = cleanVal(getField(r, ['Description', 'Details', 'Bio', 'Caption']));
+        var flyerPlaceholder = normalizeImageValue(getField(r, ['FlyerUrl', 'ImageUrl', 'PhotoUrl', 'Flyer']));
+
+        if (!title && !date && !time && !location && !description && !flyerPlaceholder) return;
+        events.push({
+          id: 'event-' + idx,
+          title: title,
+          date: date,
+          time: time,
+          location: location,
+          category: category,
+          description: description,
+          flyerPlaceholder: flyerPlaceholder
+        });
+      });
+      return;
+    }
+
+    // 4. FANS TAB
+    if (tabLower === 'fans' || tabLower === 'fan' || tabLower === 'supporters') {
+      rows.forEach(function(r, idx) {
+        var title = cleanVal(getField(r, ['Name', 'Title', 'Fan Name']));
+        var category = cleanVal(getField(r, ['Role', 'Category', 'Type', 'Group']));
+        var caption = cleanVal(getField(r, ['Caption', 'Description', 'Bio', 'Message']));
+        var relatedPlayer = cleanVal(getField(r, ['RelatedPlayer', 'Related Player', 'Player', 'Warrior']));
+        var photoUrl = normalizeImageValue(getField(r, ['PhotoUrl', 'ImageUrl', 'Photo', 'Image']));
+
+        if (!title && !caption && !photoUrl) return;
+        fans.push({
+          id: 'fan-' + idx,
+          title: title,
+          category: category,
+          caption: caption,
+          relatedPlayer: relatedPlayer,
+          photoUrl: photoUrl
+        });
+      });
+      return;
+    }
+
+    // 5. SPONSORS TAB (Only returns rows where Verified checkbox is checked / TRUE)
+    if (tabLower === 'sponsors' || tabLower === 'sponsor' || tabLower === 'partners') {
+      rows.forEach(function(r, idx) {
+        var verifiedRaw = getField(r, ['Verified', 'Approved', 'Active', 'Show']);
+        if (!isVerifiedValue(verifiedRaw)) return;
+
+        var name = cleanVal(getField(r, ['Name', 'Sponsor Name', 'Company', 'Organization', 'Sponsor']));
+        var tier = cleanVal(getField(r, ['Tier', 'Level', 'Package', 'Category']));
+        var website = cleanVal(getField(r, ['Website', 'Url', 'Link', 'Site']));
+        var message = cleanVal(getField(r, ['Message', 'Description', 'Caption', 'Notes', 'Note', 'Quote']));
+        var logoUrl = normalizeImageValue(
+          getField(r, ['LogoUrl', 'Logo', 'Sponsor Logo', 'Flyer', 'ImageUrl', 'PhotoUrl', 'Image'])
+        );
+        var phone = cleanVal(getField(r, ['Phone', 'Phone Number']));
+        var email = cleanVal(getField(r, ['Email', 'Email Address']));
+        var preferredContact = cleanVal(getField(r, ['PreferredContact', 'Preferred Contact']));
+        var timestamp = cleanVal(getField(r, ['Timestamp', 'Timestamp Submitted', 'Submitted At', 'Date']));
+
+        if (!name && !logoUrl && !message && !website) return;
+
+        sponsors.push({
+          id: 'sponsor-' + idx,
+          name: name,
+          tier: tier,
+          website: website,
+          message: message,
+          description: message,
+          logoUrl: logoUrl,
+          phone: phone,
+          email: email,
+          preferredContact: preferredContact,
+          timestamp: timestamp,
+          verified: true
+        });
+      });
+      return;
+    }
+
+    // 6. BECOME WARRIOR TAB (Only Verified=TRUE rows are synced to Roster and returned)
+    if (
+      tabLower === 'become warrior' ||
+      tabLower === 'becomewarrior' ||
+      tabLower === 'become a warrior' ||
+      tabLower === 'warrior applications'
+    ) {
+      rows.forEach(function(r, idx) {
+        var verifiedRaw = getField(r, ['Verified', 'Approved', 'Active', 'Show']);
+        if (!isVerifiedValue(verifiedRaw)) return;
+
+        // Also ensure verified warrior is appended into the Roster sheet tab if not already present
+        try {
+          syncVerifiedWarriorToRosterSheet(ss, r);
+        } catch (syncErr) {}
+
+        var wp = buildPlayerFromRow(r, 'verified-warrior', idx);
+        if (wp) {
+          verifiedWarriorPlayers.push(wp);
+        }
+      });
+      return;
+    }
+
+    // 7. DEFAULT: ROSTER / PLAYERS TAB
+    rows.forEach(function(r, idx) {
+      var verifiedColVal = getField(r, ['Verified', 'Approved']);
+      if (verifiedColVal !== '' && !isVerifiedValue(verifiedColVal)) {
+        return;
+      }
+
+      var firstName = cleanVal(getField(r, ['First Name', 'FirstName', 'First']));
+      var lastName = cleanVal(getField(r, ['Last Name', 'LastName', 'Last']));
+      var fullName = cleanVal(getField(r, ['FullName', 'Name'])) || [firstName, lastName].filter(Boolean).join(' ');
+      var rosterTab = cleanVal(getField(r, ['RosterTab', 'Roster Tab', 'RankTab', 'Squad', 'Division']));
+      var roleBadge = cleanVal(getField(r, ['Role Badge', 'RoleBadge', 'Role', 'CaptainBadge']));
+      var tabTypeLower = rosterTab.toLowerCase();
+
+      if (tabTypeLower === 'board' || tabTypeLower === 'staff') {
+        var bName = fullName;
+        var bRole = roleBadge || cleanVal(getField(r, ['Position']));
+        var bCaption = cleanVal(getField(r, ['Bio', 'Caption']));
+        var bPhoto = normalizeImageValue(getField(r, ['JerseyPhotoUrl', 'PhotoUrl']));
+        if (bName || bRole || bCaption || bPhoto) {
+          board.push({
+            id: 'board-inline-' + idx,
+            role: bRole,
+            name: bName,
+            caption: bCaption,
+            photoUrl: bPhoto
+          });
+        }
+        return;
+      }
+
+      if (tabTypeLower === 'coach' || tabTypeLower === 'coaches') {
+        var cName = fullName;
+        var cRole = roleBadge || cleanVal(getField(r, ['Position']));
+        var cCaption = cleanVal(getField(r, ['Bio', 'Caption']));
+        var cPhoto = normalizeImageValue(getField(r, ['JerseyPhotoUrl', 'PhotoUrl']));
+        if (cName || cRole || cCaption || cPhoto) {
+          coaches.push({
+            id: 'coach-inline-' + idx,
+            role: cRole,
+            name: cName,
+            caption: cCaption,
+            photoUrl: cPhoto
+          });
+        }
+        return;
+      }
+
+      var p = buildPlayerFromRow(r, 'sheet-player', idx);
+      if (p) {
+        players.push(p);
+      }
+    });
+  });
+
+  // Deduplicate verified warriors into players list if not already in Roster
+  var existingNames = {};
+  players.forEach(function(p) {
+    if (p.fullName) {
+      existingNames[p.fullName.toLowerCase()] = true;
+    }
+  });
+  verifiedWarriorPlayers.forEach(function(wp) {
+    var key = (wp.fullName || '').toLowerCase();
+    if (key && !existingNames[key]) {
+      existingNames[key] = true;
+      players.push(wp);
+    }
+  });
+
+  var payloadString = JSON.stringify({
+    status: 'ok',
+    ok: true,
+    updatedAt: new Date().toISOString(),
+    sheets: sheetsMap,
+    players: players,
+    board: board,
+    coaches: coaches,
+    events: events,
+    fans: fans,
+    sponsors: sponsors
+  });
+
+  try {
+    cache.put(CACHE_KEY, payloadString, CACHE_TTL_SECONDS);
+  } catch (cacheErr) {}
+
+  return ContentService.createTextOutput(payloadString).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Handles POST requests from:
+ * 1. "Become a Warrior" form (action === "submitWarrior") -> "Become Warrior" tab
+ * 2. "Become a Sponsor" form (action === "submitSponsor" or default) -> "Sponsors" tab
+ */
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  lock.tryLock(10000);
+
+  try {
+    var rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '{}';
+    var data = JSON.parse(rawBody);
+
+    // Block automated honeypot spam
+    if (data.honeypot && String(data.honeypot).trim() !== '') {
+      return ContentService.createTextOutput(
+        JSON.stringify({ ok: false, status: 'error', message: 'Spam submission blocked.' })
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var action = String(data.action || 'submitSponsor').trim();
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+    // =========================================================================
+    // 1. BECOME A WARRIOR FORM SUBMISSION -> "Become Warrior" Tab
+    // =========================================================================
+    if (action === 'submitWarrior') {
+      var warriorSheet = ensureSheetHeaders(ss, 'Become Warrior', BECOME_WARRIOR_HEADERS);
+
+      var warriorHeaders = warriorSheet
+        .getRange(1, 1, 1, warriorSheet.getLastColumn())
+        .getDisplayValues()[0]
+        .map(normalizeKey);
+
+      var lastName = String(data.lastName || '').trim();
+      var firstName = String(data.firstName || '').trim();
+      var militaryBranch = String(data.militaryBranch || '').trim();
+      var militaryRank = String(data.militaryRank || '').trim();
+      var serviceEra = String(data.serviceEra || '').trim();
+      var hometown = String(data.hometown || '').trim();
+      var roleBadge = String(data.roleBadge || '').trim();
+      var militaryPhotoUrl = normalizeImageValue(data.militaryPhotoUrl || '');
+      var bio = String(data.bio || '').trim();
+      var whatWarriorMeans = String(data.whatWarriorMeans || '').trim();
+
+      var mediaList = [];
+      if (Array.isArray(data.mediaUrls)) {
+        mediaList = data.mediaUrls.slice(0, 5).map(normalizeImageValue).filter(Boolean);
+      } else if (data.mediaUrlsCsv) {
+        mediaList = parseMediaCellToList(data.mediaUrlsCsv).slice(0, 5);
+      }
+      var mediaUrlsCsv = mediaList.join(', ');
+
+      if (!firstName && !lastName) {
+        return ContentService.createTextOutput(
+          JSON.stringify({ ok: false, status: 'error', message: 'First Name and Last Name are required.' })
+        ).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      var newWarriorRow = new Array(warriorHeaders.length).fill('');
+      var warriorVerifiedColIndex = -1;
+
+      for (var w = 0; w < warriorHeaders.length; w++) {
+        var wh = warriorHeaders[w];
+        if (wh === 'verified' || wh === 'approved' || wh === 'active') {
+          newWarriorRow[w] = false;
+          warriorVerifiedColIndex = w + 1;
+        } else if (wh === 'lastname' || wh === 'last') {
+          newWarriorRow[w] = lastName;
+        } else if (wh === 'firstname' || wh === 'first') {
+          newWarriorRow[w] = firstName;
+        } else if (wh === 'militarybranch' || wh === 'branch' || wh === 'servicebranch') {
+          newWarriorRow[w] = militaryBranch;
+        } else if (wh === 'militaryrank' || wh === 'rank') {
+          newWarriorRow[w] = militaryRank;
+        } else if (wh === 'serviceera' || wh === 'serviceerayears' || wh === 'years') {
+          newWarriorRow[w] = serviceEra;
+        } else if (wh === 'hometown' || wh === 'city') {
+          newWarriorRow[w] = hometown;
+        } else if (wh === 'rolebadge' || wh === 'role' || wh === 'captainbadge') {
+          newWarriorRow[w] = roleBadge;
+        } else if (wh === 'militaryphotourl' || wh === 'militaryphoto') {
+          newWarriorRow[w] = militaryPhotoUrl;
+        } else if (wh === 'bio' || wh === 'story' || wh === 'profilebio') {
+          newWarriorRow[w] = bio;
+        } else if (wh === 'whatwarriormeans' || wh === 'whatthewarriorsmeans' || wh === 'testimony') {
+          newWarriorRow[w] = whatWarriorMeans;
+        } else if (wh === 'mediaurlscsv' || wh === 'mediaurls' || wh === 'media') {
+          newWarriorRow[w] = mediaUrlsCsv;
+        }
+      }
+
+      warriorSheet.appendRow(newWarriorRow);
+
+      var lastWarriorRow = warriorSheet.getLastRow();
+      if (warriorVerifiedColIndex > 0) {
+        warriorSheet.getRange(lastWarriorRow, warriorVerifiedColIndex).insertCheckboxes();
+      }
+
+      try {
+        CacheService.getScriptCache().remove(CACHE_KEY);
+      } catch (e) {}
+
+      return ContentService.createTextOutput(
+        JSON.stringify({
+          ok: true,
+          status: 'ok',
+          action: 'submitWarrior',
+          message: 'Warrior application submitted to Become Warrior tab (awaiting Verified checkmark).'
+        })
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // =========================================================================
+    // 2. BECOME A SPONSOR FORM SUBMISSION -> "Sponsors" Tab
+    // =========================================================================
+    var requiredSponsorHeaders = [
+      'Timestamp',
+      'Verified',
+      'Name',
+      'Phone',
+      'Email',
+      'PreferredContact',
+      'Website',
+      'Message',
+      'LogoUrl'
+    ];
+
+    var sponsorSheet = ensureSheetHeaders(ss, 'Sponsors', requiredSponsorHeaders);
+
+    var finalHeaders = sponsorSheet
+      .getRange(1, 1, 1, sponsorSheet.getLastColumn())
+      .getDisplayValues()[0]
+      .map(normalizeKey);
+
+    var timestamp =
+      data.timestampSubmitted ||
+      data.timestamp ||
+      new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+    var name = String(data.name || '').trim();
+    var phone = String(data.phone || '').trim();
+    var email = String(data.email || '').trim();
+    var preferredContact = Array.isArray(data.preferredContact)
+      ? data.preferredContact.join(', ')
+      : String(data.preferredContact || '').trim();
+    var website = String(data.website || '').trim();
+    var message = String(data.message || '').trim();
+    var logoUrl = normalizeImageValue(data.logoUrl || '');
+
+    if (!name) {
+      return ContentService.createTextOutput(
+        JSON.stringify({ ok: false, status: 'error', message: 'Sponsor Name is required.' })
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var newRow = new Array(finalHeaders.length).fill('');
+    var verifiedColIndex = -1;
+
+    for (var i = 0; i < finalHeaders.length; i++) {
+      var h = finalHeaders[i];
+      if (h === 'timestamp' || h === 'timestampsubmitted' || h === 'submittedat' || h === 'date') {
+        newRow[i] = timestamp;
+      } else if (h === 'verified' || h === 'approved' || h === 'active') {
+        newRow[i] = false;
+        verifiedColIndex = i + 1;
+      } else if (h === 'name' || h === 'sponsorname' || h === 'company') {
+        newRow[i] = name;
+      } else if (h === 'phone' || h === 'phonenumber') {
+        newRow[i] = phone;
+      } else if (h === 'email' || h === 'emailaddress') {
+        newRow[i] = email;
+      } else if (h === 'preferredcontact' || h === 'contactmethod' || h === 'contactpreference') {
+        newRow[i] = preferredContact;
+      } else if (h === 'website' || h === 'url' || h === 'link' || h === 'site') {
+        newRow[i] = website;
+      } else if (h === 'message' || h === 'description' || h === 'caption' || h === 'notes' || h === 'note') {
+        newRow[i] = message;
+      } else if (h === 'logourl' || h === 'logo' || h === 'sponsorlogo' || h === 'flyer' || h === 'imageurl') {
+        newRow[i] = logoUrl;
+      }
+    }
+
+    sponsorSheet.appendRow(newRow);
+
+    var lastRow = sponsorSheet.getLastRow();
+    if (verifiedColIndex > 0) {
+      sponsorSheet.getRange(lastRow, verifiedColIndex).insertCheckboxes();
+    }
+
+    try {
+      CacheService.getScriptCache().remove(CACHE_KEY);
+    } catch (e) {}
+
+    return ContentService.createTextOutput(
+      JSON.stringify({
+        ok: true,
+        status: 'ok',
+        action: 'submitSponsor',
+        message: 'Sponsor submitted to Google Sheets (awaiting Verified checkmark).',
+        logoUrl: logoUrl
+      })
+    ).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(
+      JSON.stringify({
+        ok: false,
+        status: 'error',
+        message: String(err)
+      })
+    ).setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Triggered automatically when you edit the sheet:
+ * When you check the "Verified" checkbox on a row in the "Become Warrior" tab,
+ * that player is immediately appended to the "Roster" tab (with missing fields left blank
+ * until manually filled in Google Sheets) and the script cache is cleared.
+ */
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    var sheet = e.range.getSheet();
+    var tabName = sheet.getName().trim().toLowerCase();
+
+    try {
+      CacheService.getScriptCache().remove(CACHE_KEY);
+    } catch (cacheErr) {}
+
+    if (tabName !== 'become warrior' && tabName !== 'becomewarrior' && tabName !== 'become a warrior') {
+      return;
+    }
+
+    var rowIndex = e.range.getRow();
+    if (rowIndex <= 1) return;
+
+    var lastCol = Math.max(sheet.getLastColumn(), 1);
+    var headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(normalizeKey);
+    var verifiedColIdx = headers.indexOf('verified');
+    if (verifiedColIdx === -1) return;
+
+    // Only run if the Verified column on this row is now checked (TRUE)
+    var rowDisplay = sheet.getRange(rowIndex, 1, 1, lastCol).getDisplayValues()[0];
+    var rowFormulas = sheet.getRange(rowIndex, 1, 1, lastCol).getFormulas()[0];
+    var rowRaw = sheet.getRange(rowIndex, 1, 1, lastCol).getValues()[0];
+
+    var isVerified =
+      rowRaw[verifiedColIdx] === true || isVerifiedValue(rowDisplay[verifiedColIdx]);
+    if (!isVerified) return;
+
+    var rowObj = {};
+    for (var c = 0; c < headers.length; c++) {
+      var cellStr = String(rowDisplay[c] || '').trim();
+      if (!cellStr && rowRaw[c] && typeof rowRaw[c] === 'object') {
+        try {
+          if (typeof rowRaw[c].getContentUrl === 'function') {
+            cellStr = String(rowRaw[c].getContentUrl() || '').trim();
+          }
+        } catch (imgErr) {}
+      }
+      if (!cellStr && rowFormulas[c]) {
+        cellStr = normalizeImageValue(rowFormulas[c]);
+      }
+      if (headers[c]) {
+        rowObj[headers[c]] = cellStr;
+      }
+    }
+
+    var ss = sheet.getParent();
+    syncVerifiedWarriorToRosterSheet(ss, rowObj);
+  } catch (err) {
+    Logger.log('onEdit error: ' + err);
+  }
+}
