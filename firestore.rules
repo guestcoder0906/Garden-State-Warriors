@@ -30,7 +30,7 @@ service cloud.firestore {
         data.mimeType is string &&
         data.mimeType.size() >= 6 &&
         data.mimeType.size() <= 64 &&
-        data.mimeType.matches('^image/(jpeg|jpg|png|webp|gif)$') &&
+        data.mimeType.matches('^image/[a-zA-Z0-9.+\\-]+$') &&
         data.imageData is string &&
         data.imageData.size() >= 16 &&
         data.imageData.size() <= 950000 &&

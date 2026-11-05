@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ChevronDown,
   ChevronLeft,
@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   PlayerProfile,
@@ -46,13 +47,24 @@ import {
   uploadSponsorImageToFirebase,
   extractFirebaseAssetId,
   resolveFirebaseAssetDirect,
+  trackPageView,
+  trackCustomEvent,
 } from './services/firebaseStorage';
+import {
+  sanitizeFormText,
+  containsSpamPatterns,
+  isValidEmailAddress,
+  isValidPhoneNumber,
+  verifyAntiSpamSubmission,
+  recordSuccessfulFormSubmission,
+} from './utils/formSecurity';
 import {
   fetchSupabasePlayers,
   isSupabaseConfigured,
 } from './services/supabaseClient';
 import { PlayerProfileModal } from './components/PlayerProfileModal';
 import { BecomeWarriorForm } from './components/BecomeWarriorForm';
+import { RecaptchaWidget } from './components/RecaptchaWidget';
 
 type TopSection =
   | 'home'
@@ -103,6 +115,7 @@ export default function App() {
   const [customDonationAmount, setCustomDonationAmount] = useState<string>('');
 
   // Become a Sponsor Direct Website Form State (Connected to Google Apps Script -> Sponsors tab)
+  const sponsorFormLoadedAtRef = useRef<number>(Date.now());
   const [sponsorName, setSponsorName] = useState<string>('');
   const [sponsorPhone, setSponsorPhone] = useState<string>('');
   const [sponsorEmail, setSponsorEmail] = useState<string>('');
@@ -117,6 +130,9 @@ export default function App() {
   const [sponsorLogoFileName, setSponsorLogoFileName] = useState<string>('');
   const [sponsorLogoUploading, setSponsorLogoUploading] = useState<boolean>(false);
   const [sponsorSubmitting, setSponsorSubmitting] = useState<boolean>(false);
+  const [sponsorHoneypot, setSponsorHoneypot] = useState<string>('');
+  const [sponsorCaptchaToken, setSponsorCaptchaToken] = useState<string>('');
+  const [sponsorCaptchaResetCount, setSponsorCaptchaResetCount] = useState<number>(0);
   const [sponsorStatus, setSponsorStatus] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -161,7 +177,7 @@ export default function App() {
     setSponsorStatus(null);
     setSponsorLogoUploading(true);
     try {
-      const uploaded = await uploadSponsorImageToFirebase(file, sponsorName);
+      const uploaded = await uploadSponsorImageToFirebase(file, sponsorName, 'sp');
       setSponsorFirebaseLogoUrl(uploaded.url);
       setSponsorFirebasePreviewUrl(uploaded.previewUrl);
       setSponsorFirebaseAssetId(uploaded.assetId);
@@ -182,19 +198,57 @@ export default function App() {
 
   const handleSponsorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sponsorName.trim() && !sponsorEmail.trim() && !sponsorPhone.trim()) {
+    const cleanName = sanitizeFormText(sponsorName, 120);
+    const cleanPhone = sanitizeFormText(sponsorPhone, 40);
+    const cleanEmail = sanitizeFormText(sponsorEmail, 120);
+    const cleanWebsite = sanitizeFormText(sponsorWebsite, 200);
+    const cleanMessage = sanitizeFormText(sponsorMessage, 1000);
+
+    if (!cleanName) {
       setSponsorStatus({
         type: 'error',
-        message: 'Please enter at least your Name, Phone, or Email.',
+        message: 'Please enter the Sponsor or Organization Name.',
       });
       return;
     }
 
-    if (sponsorWebsite.trim() && !isValidWebsiteUrl(sponsorWebsite.trim())) {
+    if (!cleanEmail && !cleanPhone) {
+      setSponsorStatus({
+        type: 'error',
+        message: 'Please provide at least a valid Email address or Phone number.',
+      });
+      return;
+    }
+
+    if (cleanEmail && !isValidEmailAddress(cleanEmail)) {
+      setSponsorStatus({
+        type: 'error',
+        message: 'Please enter a valid Email address (e.g., name@example.com).',
+      });
+      return;
+    }
+
+    if (cleanPhone && !isValidPhoneNumber(cleanPhone)) {
+      setSponsorStatus({
+        type: 'error',
+        message: 'Please enter a valid Phone number (at least 7 digits).',
+      });
+      return;
+    }
+
+    if (cleanWebsite && !isValidWebsiteUrl(cleanWebsite)) {
       setSponsorWebsiteError('Please enter a valid website URL (e.g., https://example.com or www.example.com).');
       setSponsorStatus({
         type: 'error',
         message: 'Website must be a valid website URL (e.g., https://example.com).',
+      });
+      return;
+    }
+
+    if (containsSpamPatterns(cleanName) || containsSpamPatterns(cleanMessage, true)) {
+      setSponsorStatus({
+        type: 'error',
+        message: 'Spam or invalid links detected in form text fields.',
       });
       return;
     }
@@ -207,24 +261,46 @@ export default function App() {
       return;
     }
 
+    const fingerprint = `${cleanName.toLowerCase()}|${cleanEmail.toLowerCase()}|${cleanPhone}`;
+    const securityCheck = verifyAntiSpamSubmission({
+      formKey: 'sponsor',
+      honeypotValue: sponsorHoneypot,
+      formLoadedAt: sponsorFormLoadedAtRef.current,
+      captchaToken: sponsorCaptchaToken,
+      payloadFingerprint: fingerprint,
+    });
+    if (!securityCheck.ok) {
+      setSponsorStatus({
+        type: 'error',
+        message: securityCheck.error || 'Security check failed.',
+      });
+      return;
+    }
+
     setSponsorWebsiteError('');
     setSponsorSubmitting(true);
     setSponsorStatus(null);
     const result = await submitSponsorToGoogleSheet({
-      name: sponsorName,
-      phone: sponsorPhone,
-      email: sponsorEmail,
+      name: cleanName,
+      phone: cleanPhone,
+      email: cleanEmail,
       preferredContact: sponsorPreferredContact,
-      website: sponsorWebsite.trim(),
-      message: sponsorMessage.trim(),
+      website: cleanWebsite,
+      message: cleanMessage,
       logoUrl: sponsorFirebaseLogoUrl,
       firebaseAssetId: sponsorFirebaseAssetId,
       logoFile: sponsorFirebaseLogoUrl ? null : sponsorLogoFile,
       logoFileName: sponsorLogoFileName,
+      captchaToken: sponsorCaptchaToken,
     });
     setSponsorSubmitting(false);
 
     if (result.ok) {
+      recordSuccessfulFormSubmission('sponsor', fingerprint);
+      trackCustomEvent('submit_sponsor', {
+        has_logo: Boolean(sponsorFirebaseLogoUrl),
+        has_website: Boolean(cleanWebsite),
+      });
       setSponsorStatus({ type: 'success', message: result.message });
       setSponsorName('');
       setSponsorPhone('');
@@ -238,10 +314,18 @@ export default function App() {
       setSponsorFirebaseAssetId('');
       setSponsorLogoFile(null);
       setSponsorLogoFileName('');
+      setSponsorCaptchaToken('');
+      setSponsorCaptchaResetCount((c) => c + 1);
+      sponsorFormLoadedAtRef.current = Date.now();
     } else {
       setSponsorStatus({ type: 'error', message: result.message });
     }
   };
+
+  // Track Google Analytics pageviews whenever navigation changes
+  useEffect(() => {
+    trackPageView(activeSection, activeSection === 'about' ? aboutSubTab : undefined);
+  }, [activeSection, aboutSubTab]);
 
   // Dynamic Auto-Sync from Verified Google Sheet (`1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s`) via Direct gviz + Apps Script
   useEffect(() => {
@@ -1033,13 +1117,15 @@ export default function App() {
                           </div>
                         )}
                         {sp.logoUrl && (
-                          <img
-                            src={sp.logoUrl}
-                            alt={sp.name || 'Sponsor Logo'}
-                            onError={handleFirebaseImgError}
-                            className="h-14 w-auto object-contain rounded bg-black/40 p-2 border border-white/10 self-start"
-                            referrerPolicy="no-referrer"
-                          />
+                          <div className="w-full pt-2">
+                            <img
+                              src={sp.logoUrl}
+                              alt={sp.name || 'Sponsor Logo'}
+                              onError={handleFirebaseImgError}
+                              className="h-36 sm:h-44 md:h-48 w-full max-w-md object-contain rounded-xl bg-black/40 p-3 border border-white/10"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
                         )}
                       </div>
                     );
@@ -1893,18 +1979,32 @@ export default function App() {
                 </p>
               </div>
 
-              <form onSubmit={handleSponsorSubmit} className="space-y-5">
+              <form onSubmit={handleSponsorSubmit} className="space-y-5" noValidate>
+                {/* Hidden anti-bot honeypot field */}
+                <div className="hidden" aria-hidden="true">
+                  <label htmlFor="sponsor-hp-field">Leave this field blank</label>
+                  <input
+                    id="sponsor-hp-field"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={sponsorHoneypot}
+                    onChange={(e) => setSponsorHoneypot(e.target.value)}
+                  />
+                </div>
+
                 {/* Name */}
                 <div className="space-y-1.5">
                   <label
                     htmlFor="sponsor-name"
                     className="block text-xs font-semibold text-neutral-200 uppercase tracking-wider"
                   >
-                    Name
+                    Name <span className="text-[#EF4444]">*</span>
                   </label>
                   <input
                     id="sponsor-name"
                     type="text"
+                    required
                     value={sponsorName}
                     onChange={(e) => setSponsorName(e.target.value)}
                     placeholder="Business, organization, or supporter name"
@@ -2040,7 +2140,7 @@ export default function App() {
                           {sponsorLogoFileName || 'Choose a logo or flyer image'}
                         </span>
                         <span className="text-[11px] text-neutral-400">
-                          PNG, JPG, or WebP
+                          Supports any image format · Permanently hosted on Firebase server
                         </span>
                       </div>
                     </div>
@@ -2090,7 +2190,7 @@ export default function App() {
                         src={sponsorFirebasePreviewUrl || sponsorFirebaseLogoUrl}
                         alt="Uploaded Sponsor Logo Preview"
                         onError={handleFirebaseImgError}
-                        className="h-16 w-auto object-contain rounded bg-black/40 p-1.5 border border-white/10 self-start"
+                        className="h-28 sm:h-32 w-auto max-w-xs object-contain rounded-lg bg-black/40 p-2 border border-white/10 self-start"
                       />
                       <div className="space-y-1 min-w-0">
                         <span className="text-xs text-emerald-400 font-bold font-mono-tabular block">
@@ -2109,6 +2209,17 @@ export default function App() {
                   )}
                 </div>
 
+                {/* Google reCAPTCHA API Verification */}
+                <div className="p-4 rounded-xl bg-[#070C09] border border-white/10 space-y-2">
+                  <span className="block text-xs font-semibold text-neutral-200">
+                    Security Verification <span className="text-[#EF4444]">*</span>
+                  </span>
+                  <RecaptchaWidget
+                    onVerify={(token) => setSponsorCaptchaToken(token)}
+                    resetSignal={sponsorCaptchaResetCount}
+                  />
+                </div>
+
                 {sponsorStatus && (
                   <div
                     className={`p-3.5 rounded-xl text-xs font-medium border ${
@@ -2123,7 +2234,7 @@ export default function App() {
 
                 <button
                   type="submit"
-                  disabled={sponsorSubmitting}
+                  disabled={sponsorSubmitting || sponsorLogoUploading}
                   className="w-full py-3 rounded-xl bg-[#EAB308] hover:bg-[#FACC15] disabled:opacity-50 text-[#070C09] font-extrabold text-sm uppercase tracking-wider transition-colors"
                 >
                   {sponsorSubmitting ? 'Submitting Sponsor Info...' : 'Submit Sponsor Application'}

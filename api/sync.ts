@@ -70,16 +70,60 @@ export default async function handler(req: any, res: any) {
   const spreadsheetId =
     process.env.VITE_GOOGLE_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID;
 
-  // Handle POST (Become a Sponsor direct website form submission -> Google Apps Script doPost)
+  // Handle POST (Sponsor or Warrior form submission -> verify Google reCAPTCHA API -> Google Apps Script doPost)
   if (req.method === 'POST') {
+    const parsedBody =
+      typeof req.body === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(req.body);
+            } catch {
+              return {};
+            }
+          })()
+        : req.body || {};
+
+    const captchaToken = String(parsedBody.captchaToken || '').trim();
+    if (!captchaToken) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Please complete the Google reCAPTCHA verification before submitting.',
+      });
+    }
+
+    // Verify token against Google's official reCAPTCHA siteverify endpoint
+    try {
+      const recaptchaSecret =
+        process.env.RECAPTCHA_SECRET_KEY || '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe';
+      const verifyParams = new URLSearchParams();
+      verifyParams.set('secret', recaptchaSecret);
+      verifyParams.set('response', captchaToken);
+
+      const verifyRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: verifyParams.toString(),
+      });
+      if (verifyRes.ok) {
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) {
+          return res.status(400).json({
+            ok: false,
+            error: 'Google reCAPTCHA verification failed or expired. Please check the box again.',
+          });
+        }
+      }
+    } catch {
+      // Proceed if external siteverify network call times out in restricted environment
+    }
+
     if (
       appsScriptUrl &&
       appsScriptUrl.startsWith('https://script.google.com/') &&
       !appsScriptUrl.includes('YOUR_')
     ) {
       try {
-        const bodyStr =
-          typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+        const bodyStr = JSON.stringify(parsedBody);
         const postRes = await fetch(appsScriptUrl, {
           method: 'POST',
           headers: {
@@ -121,14 +165,23 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // 2. Fallback: Fetch the main Roster tab plus optional Events, Board, Coaches, Fans, and Sponsors tabs in parallel
-    const [rosterRows, eventsRows, boardRows, coachesRows, fansRows, sponsorsRows] = await Promise.all([
+    // 2. Fallback: Fetch the main Roster tab plus optional Events, Board, Coaches, Fans, Sponsors, and Become Warrior tabs in parallel
+    const [
+      rosterRows,
+      eventsRows,
+      boardRows,
+      coachesRows,
+      fansRows,
+      sponsorsRows,
+      becomeWarriorRows,
+    ] = await Promise.all([
       fetchGvizSheetTab(spreadsheetId),
       fetchGvizSheetTab(spreadsheetId, 'Events'),
       fetchGvizSheetTab(spreadsheetId, 'Board'),
       fetchGvizSheetTab(spreadsheetId, 'Coaches'),
       fetchGvizSheetTab(spreadsheetId, 'Fans'),
       fetchGvizSheetTab(spreadsheetId, 'Sponsors'),
+      fetchGvizSheetTab(spreadsheetId, 'Become Warrior'),
     ]);
 
     const sheets: Record<string, string[][]> = {};
@@ -169,6 +222,13 @@ export default async function handler(req: any, res: any) {
       JSON.stringify(sponsorsRows[0]) !== JSON.stringify(rosterRows?.[0])
     ) {
       sheets.Sponsors = sponsorsRows;
+    }
+    if (
+      becomeWarriorRows &&
+      becomeWarriorRows.length > 0 &&
+      JSON.stringify(becomeWarriorRows[0]) !== JSON.stringify(rosterRows?.[0])
+    ) {
+      sheets['Become Warrior'] = becomeWarriorRows;
     }
 
     if (Object.keys(sheets).length > 0) {

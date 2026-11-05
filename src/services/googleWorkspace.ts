@@ -68,6 +68,7 @@ export interface SponsorSubmissionInput {
   firebaseAssetId?: string;
   logoFile?: File | null;
   logoFileName?: string;
+  captchaToken?: string;
 }
 
 /**
@@ -126,6 +127,7 @@ export async function submitSponsorToGoogleSheet(
     logoUrl: finalLogoUrl,
     firebaseAssetId,
     logoFileName,
+    captchaToken: input.captchaToken || '',
   };
 
   // 1. Direct POST to Google Apps Script Web App (`text/plain` avoids CORS preflight)
@@ -184,6 +186,123 @@ export async function submitSponsorToGoogleSheet(
     ok: false,
     message:
       'Unable to reach Google Apps Script right now. Please make sure your Google Apps Script Web App is deployed with doPost() and set in VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL.',
+  };
+}
+
+export interface WarriorApplicationInput {
+  firstName: string;
+  lastName: string;
+  militaryBranch: string;
+  militaryRank: string;
+  serviceEra: string;
+  hometown: string;
+  roleBadge: string;
+  militaryPhotoUrl: string;
+  bio: string;
+  whatWarriorMeans: string;
+  mediaUrls: string[];
+  honeypot?: string;
+  captchaToken?: string;
+}
+
+/**
+ * Submits the direct website "Become a Warrior" form to the Google Sheet (`Become Warrior` tab)
+ * via Google Apps Script (`doPost`).
+ * Verified rows are automatically appended to the Players Roster tab.
+ */
+export async function submitWarriorToGoogleSheet(
+  input: WarriorApplicationInput
+): Promise<{ ok: boolean; message: string }> {
+  const appsScriptUrl =
+    import.meta.env.VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL ||
+    import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
+    '';
+
+  const cleanMilitaryPhotoUrl =
+    input.militaryPhotoUrl &&
+    !input.militaryPhotoUrl.startsWith('data:') &&
+    !input.militaryPhotoUrl.startsWith('blob:')
+      ? input.militaryPhotoUrl.trim()
+      : '';
+
+  const cleanMediaUrls = (input.mediaUrls || [])
+    .slice(0, 5)
+    .map((u) => (u || '').trim())
+    .filter((u) => u && !u.startsWith('data:') && !u.startsWith('blob:'));
+
+  const bodyPayload = {
+    action: 'submitWarrior',
+    verified: false,
+    timestampSubmitted: new Date().toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+    }),
+    lastName: input.lastName.trim(),
+    firstName: input.firstName.trim(),
+    militaryBranch: input.militaryBranch.trim(),
+    militaryRank: input.militaryRank.trim(),
+    serviceEra: input.serviceEra.trim(),
+    hometown: input.hometown.trim(),
+    roleBadge: input.roleBadge.trim(),
+    militaryPhotoUrl: cleanMilitaryPhotoUrl,
+    bio: input.bio.trim(),
+    whatWarriorMeans: input.whatWarriorMeans.trim(),
+    mediaUrlsCsv: cleanMediaUrls.join(', '),
+    mediaUrls: cleanMediaUrls,
+    honeypot: input.honeypot || '',
+    captchaToken: input.captchaToken || '',
+  };
+
+  if (
+    appsScriptUrl &&
+    appsScriptUrl.startsWith('https://script.google.com/') &&
+    !appsScriptUrl.includes('YOUR_')
+  ) {
+    try {
+      const res = await fetch(appsScriptUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify(bodyPayload),
+      });
+      if (res.ok) {
+        return {
+          ok: true,
+          message:
+            'Thank you for your service! Your Warrior application has been submitted to the Become Warrior tab in Google Sheets. Once verified, your profile will automatically appear on the Players Roster.',
+        };
+      }
+    } catch {
+      // Fall through to /api/sync proxy
+    }
+  }
+
+  try {
+    const apiRes = await fetch('/api/sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(bodyPayload),
+    });
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (data && data.ok) {
+        return {
+          ok: true,
+          message:
+            'Thank you for your service! Your Warrior application has been submitted to the Become Warrior tab in Google Sheets. Once verified, your profile will automatically appear on the Players Roster.',
+        };
+      }
+    }
+  } catch {
+    // Silent fallback
+  }
+
+  return {
+    ok: false,
+    message:
+      'Unable to reach Google Apps Script right now. Please make sure your Google Apps Script Web App is deployed with the updated doPost() and set in VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL.',
   };
 }
 
@@ -255,15 +374,23 @@ async function fetchGvizSheetTabDirect(
  */
 async function fetchDirectGvizAllTabs(spreadsheetId: string): Promise<DynamicSyncResult | null> {
   try {
-    const [rosterRows, eventsRows, boardRows, coachesRows, fansRows, sponsorsRows] =
-      await Promise.all([
-        fetchGvizSheetTabDirect(spreadsheetId),
-        fetchGvizSheetTabDirect(spreadsheetId, 'Events'),
-        fetchGvizSheetTabDirect(spreadsheetId, 'Board'),
-        fetchGvizSheetTabDirect(spreadsheetId, 'Coaches'),
-        fetchGvizSheetTabDirect(spreadsheetId, 'Fans'),
-        fetchGvizSheetTabDirect(spreadsheetId, 'Sponsors'),
-      ]);
+    const [
+      rosterRows,
+      eventsRows,
+      boardRows,
+      coachesRows,
+      fansRows,
+      sponsorsRows,
+      becomeWarriorRows,
+    ] = await Promise.all([
+      fetchGvizSheetTabDirect(spreadsheetId),
+      fetchGvizSheetTabDirect(spreadsheetId, 'Events'),
+      fetchGvizSheetTabDirect(spreadsheetId, 'Board'),
+      fetchGvizSheetTabDirect(spreadsheetId, 'Coaches'),
+      fetchGvizSheetTabDirect(spreadsheetId, 'Fans'),
+      fetchGvizSheetTabDirect(spreadsheetId, 'Sponsors'),
+      fetchGvizSheetTabDirect(spreadsheetId, 'Become Warrior'),
+    ]);
 
     const sheets: Record<string, string[][]> = {};
     const rosterHeaderSig = JSON.stringify(rosterRows?.[0] || []);
@@ -305,6 +432,13 @@ async function fetchDirectGvizAllTabs(spreadsheetId: string): Promise<DynamicSyn
       JSON.stringify(sponsorsRows[0]) !== rosterHeaderSig
     ) {
       sheets.Sponsors = sponsorsRows;
+    }
+    if (
+      becomeWarriorRows &&
+      becomeWarriorRows.length > 0 &&
+      JSON.stringify(becomeWarriorRows[0]) !== rosterHeaderSig
+    ) {
+      sheets['Become Warrior'] = becomeWarriorRows;
     }
 
     if (Object.keys(sheets).length === 0) return null;
@@ -466,6 +600,12 @@ async function hydrateFirebaseImagesClientSide(
         ...pl,
         jerseyPhotoUrl: await resolveSheetUrlIfFirebase(pl.jerseyPhotoUrl),
         militaryPhotoUrl: await resolveSheetUrlIfFirebase(pl.militaryPhotoUrl),
+        mediaGallery: await Promise.all(
+          (pl.mediaGallery || []).map(async (item) => ({
+            ...item,
+            url: (await resolveSheetUrlIfFirebase(item.url)) || item.url,
+          }))
+        ),
       }))
     ),
   ]);

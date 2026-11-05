@@ -237,6 +237,7 @@ export function parseSheetRowsToPlayers(
     return normHeaders.findIndex((h) => partialKeys.some((k) => h.includes(k)));
   };
 
+  const idxVerified = findCol(['verified', 'approved'], ['verified', 'approved']);
   const idxLastName = findCol(['lastname', 'last'], ['lastname']);
   const idxFirstName = findCol(['firstname', 'first'], ['firstname']);
   const idxFullName = findCol(['name', 'fullname', 'playername'], ['player']);
@@ -259,13 +260,22 @@ export function parseSheetRowsToPlayers(
 
   const isGenericSheetName = (name: string) =>
     !name ||
-    /^(sheet\d*|roster|garden state warriors roster|veterans roster|players)$/i.test(name.trim());
+    /^(sheet\d*|roster|garden state warriors roster|veterans roster|players|become warrior|become a warrior|becomewarrior)$/i.test(
+      name.trim()
+    );
 
   const players: PlayerProfile[] = [];
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.every((cell) => !cleanSheetCell(cell))) continue;
+
+    // If a Verified column exists (e.g. in the "Become Warrior" tab), only include rows where Verified is checked (TRUE)
+    if (idxVerified >= 0) {
+      if (!isSheetCheckmarkTrue(row[idxVerified])) {
+        continue;
+      }
+    }
 
     const getCell = (idx: number) =>
       idx >= 0 && row[idx] !== undefined ? cleanSheetCell(row[idx]) : '';
@@ -807,15 +817,61 @@ export function parseAppsScriptPayload(payload: {
       allFans.push(...parseSheetRowsToFans(rows));
     } else if (/^(sponsors|sponsor|partners)$/i.test(tabName.trim())) {
       allSponsors.push(...parseSheetRowsToSponsors(rows));
+    } else if (/^(become warrior|become a warrior|becomewarrior)$/i.test(tabName.trim())) {
+      const verifiedWarriors = parseSheetRowsToPlayers(rows, 'Become Warrior');
+      for (const vw of verifiedWarriors) {
+        const key = vw.name.trim().toLowerCase();
+        const existingIdx = allPlayers.findIndex(
+          (existing) => key && existing.name.trim().toLowerCase() === key
+        );
+        if (existingIdx === -1) {
+          allPlayers.push(vw);
+          if (vw.tierTab) playerTabsSet.add(vw.tierTab);
+        } else {
+          // Enrich any fields on the existing Roster entry that are still blank
+          const ex = allPlayers[existingIdx];
+          allPlayers[existingIdx] = {
+            ...ex,
+            branch: ex.branch || vw.branch,
+            rank: ex.rank || vw.rank,
+            yearsOfService: ex.yearsOfService || vw.yearsOfService,
+            hometown: ex.hometown || vw.hometown,
+            bio: ex.bio || vw.bio,
+            whatWarriorsMeans: ex.whatWarriorsMeans || vw.whatWarriorsMeans,
+            militaryPhotoUrl: ex.militaryPhotoUrl || vw.militaryPhotoUrl,
+            mediaGallery: ex.mediaGallery.length > 0 ? ex.mediaGallery : vw.mediaGallery,
+          };
+        }
+      }
     } else {
       const parsedPlayers = parseSheetRowsToPlayers(rows, tabName);
       const inlineStaff = parseSheetRowsToStaff(rows, 'Auto');
       const inlineEvents = parseSheetRowsToEvents(rows, 'InlineRosterTab');
       if (parsedPlayers.length > 0) {
-        allPlayers.push(...parsedPlayers);
-        parsedPlayers.forEach((p) => {
-          if (p.tierTab) playerTabsSet.add(p.tierTab);
-        });
+        for (const pl of parsedPlayers) {
+          const key = pl.name.trim().toLowerCase();
+          const existingIdx = allPlayers.findIndex(
+            (existing) => key && existing.name.trim().toLowerCase() === key
+          );
+          if (existingIdx === -1) {
+            allPlayers.push(pl);
+          } else {
+            const ex = allPlayers[existingIdx];
+            allPlayers[existingIdx] = {
+              ...ex,
+              ...pl,
+              jerseyNumber: pl.jerseyNumber || ex.jerseyNumber,
+              position: pl.position || ex.position,
+              tierTab: pl.tierTab || ex.tierTab,
+              jerseyPhotoUrl: pl.jerseyPhotoUrl || ex.jerseyPhotoUrl,
+              militaryPhotoUrl: pl.militaryPhotoUrl || ex.militaryPhotoUrl,
+              bio: pl.bio || ex.bio,
+              whatWarriorsMeans: pl.whatWarriorsMeans || ex.whatWarriorsMeans,
+              mediaGallery: pl.mediaGallery.length > 0 ? pl.mediaGallery : ex.mediaGallery,
+            };
+          }
+          if (pl.tierTab) playerTabsSet.add(pl.tierTab);
+        }
       }
       if (inlineStaff.length > 0) {
         allStaff.push(...inlineStaff);

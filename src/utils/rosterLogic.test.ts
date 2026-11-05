@@ -13,6 +13,28 @@ import {
   normalizeSheetImageUrl,
   splitMediaUrlsCell,
 } from './rosterLogic.ts';
+import {
+  validateWarriorApplicationInput,
+  verifyAntiSpamSubmission,
+  isValidEmailAddress,
+  isValidPhoneNumber,
+  containsSpamPatterns,
+} from './formSecurity.ts';
+
+const BECOME_WARRIOR_HEADERS = [
+  'Verified',
+  'Last Name',
+  'First Name',
+  'Military Branch',
+  'Military Rank',
+  'Service Era',
+  'Hometown',
+  'Role Badge',
+  'MilitaryPhotoUrl',
+  'Bio',
+  'WhatWarriorMeans',
+  'MediaUrlsCsv',
+] as const;
 
 test('extractSpreadsheetId extracts exact user spreadsheet ID', () => {
   assert.equal(
@@ -95,6 +117,122 @@ test('parseSheetRowsToSponsors only returns sponsors where Verified checkbox is 
   assert.equal(sponsors[0].logoUrl, 'https://example.com/logo.png');
 });
 
+test('Become Warrior tab only appends Verified=TRUE rows to roster and keeps missing Roster fields empty until filled', () => {
+  const payload = {
+    title: 'Garden State Warriors Roster',
+    tabs: ['Roster', 'Become Warrior'],
+    sheets: {
+      Roster: [
+        [...EXACT_SHEET_HEADERS],
+        ['Miller', 'James', '21', 'F', 'Alpha', 'U.S. Army', 'CPT', '2012-2020', 'Morristown, NJ', 'Captain', '', '', 'Existing roster player.', '', ''],
+      ],
+      'Become Warrior': [
+        [...BECOME_WARRIOR_HEADERS],
+        [
+          'FALSE',
+          'Pending',
+          'Applicant',
+          'U.S. Marine Corps',
+          'SGT',
+          '2015-2021',
+          'Newark, NJ',
+          'Veteran',
+          '/api/firebase-image?id=wr_pending',
+          'Pending applicant bio',
+          'Pending warrior quote',
+          '/api/firebase-image?id=wr_media1',
+        ],
+        [
+          'TRUE',
+          'Rivera',
+          'Carlos',
+          'U.S. Navy',
+          'PO1',
+          '2014-2022',
+          'Hoboken, NJ',
+          'Purple Heart',
+          'https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_mil',
+          'Served 8 years aboard USS New Jersey.',
+          'Brotherhood on and off the ice.',
+          'https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_m1, https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_m2',
+        ],
+      ],
+    },
+  };
+
+  const parsed = parseAppsScriptPayload(payload);
+  assert.equal(parsed.players.length, 2);
+  const carlos = parsed.players.find((p) => p.name === 'Carlos Rivera');
+  assert.ok(carlos, 'Verified Become Warrior player should be appended to players list');
+  assert.equal(carlos.jerseyNumber, '');
+  assert.equal(carlos.position, '');
+  assert.equal(carlos.tierTab, '');
+  assert.equal(carlos.jerseyPhotoUrl, undefined);
+  assert.equal(carlos.branch, 'U.S. Navy');
+  assert.equal(carlos.rank, 'PO1');
+  assert.equal(carlos.militaryPhotoUrl, '/api/firebase-image?id=wr_carlos_mil');
+  assert.equal(carlos.mediaGallery.length, 2);
+});
+
+test('formSecurity validates non-empty fields, email/phone formats, honeypot, fill-time, and math challenge', () => {
+  assert.equal(isValidEmailAddress('warrior@gardenstatewarriors.org'), true);
+  assert.equal(isValidEmailAddress('bad-email'), false);
+  assert.equal(isValidPhoneNumber('(973) 555-0199'), true);
+  assert.equal(isValidPhoneNumber('123'), false);
+  assert.equal(containsSpamPatterns('Normal veteran hockey inquiry message.'), false);
+  assert.equal(containsSpamPatterns('<script>alert(1)</script>'), true);
+
+  // Reject empty Become a Warrior form
+  const emptyCheck = validateWarriorApplicationInput({
+    firstName: '',
+    lastName: '',
+    militaryBranch: '',
+    militaryRank: '',
+    serviceEra: '',
+    hometown: '',
+    roleBadge: '',
+    bio: '',
+    whatWarriorMeans: '',
+    mediaCount: 0,
+  });
+  assert.equal(emptyCheck.ok, false);
+
+  // Accept valid Become a Warrior form
+  const validCheck = validateWarriorApplicationInput({
+    firstName: 'Carlos',
+    lastName: 'Rivera',
+    militaryBranch: 'U.S. Navy',
+    militaryRank: 'PO1',
+    serviceEra: '2014-2022',
+    hometown: 'Hoboken, NJ',
+    roleBadge: 'Veteran',
+    bio: 'Served 8 years in the U.S. Navy.',
+    whatWarriorMeans: 'Healing and camaraderie on the ice.',
+    mediaCount: 2,
+  });
+  assert.equal(validCheck.ok, true);
+
+  // Reject honeypot bot fill
+  const honeypotCheck = verifyAntiSpamSubmission({
+    formKey: 'warrior',
+    honeypotValue: 'http://spambot.ru',
+    formLoadedAt: Date.now() - 10000,
+    captchaToken: 'google-recaptcha-token-xyz',
+    payloadFingerprint: 'fp1',
+  });
+  assert.equal(honeypotCheck.ok, false);
+
+  // Reject missing Google reCAPTCHA token
+  const missingCaptchaCheck = verifyAntiSpamSubmission({
+    formKey: 'warrior',
+    honeypotValue: '',
+    formLoadedAt: Date.now() - 10000,
+    captchaToken: '',
+    payloadFingerprint: 'fp1',
+  });
+  assert.equal(missingCaptchaCheck.ok, false);
+});
+
 test('isValidWebsiteUrl validates valid website URLs via regex and rejects invalid strings', () => {
   assert.equal(isValidWebsiteUrl('https://www.gardenstatewarriors.org'), true);
   assert.equal(isValidWebsiteUrl('www.example.com/sponsors'), true);
@@ -141,3 +279,4 @@ test('formatReplaceTag formats missing media and text instructions accurately', 
     '[Replace with team photos from their social media page(s) - images]'
   );
 });
+

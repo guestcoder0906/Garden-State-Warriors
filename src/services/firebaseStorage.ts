@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
+import { getAnalytics, isSupported as isAnalyticsSupported, logEvent, Analytics } from 'firebase/analytics';
 import {
   getFirestore,
   doc,
@@ -10,9 +11,92 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const effectiveMeasurementId =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GA_MEASUREMENT_ID) ||
+  firebaseConfig.measurementId ||
+  '';
+
+const appConfig = {
+  ...firebaseConfig,
+  ...(effectiveMeasurementId ? { measurementId: effectiveMeasurementId } : {}),
+};
+
+const app = getApps().length > 0 ? getApp() : initializeApp(appConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+
+let analyticsInstance: Analytics | null = null;
+
+/**
+ * Initializes Google Analytics (Firebase Analytics + gtag.js if a Measurement ID is present)
+ * for website traffic and event tracking.
+ */
+export async function initWebsiteAnalytics(): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  try {
+    if (effectiveMeasurementId && !(window as any).gtag) {
+      const script = document.createElement('script');
+      script.async = true;
+      script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(
+        effectiveMeasurementId
+      )}`;
+      document.head.appendChild(script);
+
+      (window as any).dataLayer = (window as any).dataLayer || [];
+      function gtag(...args: any[]) {
+        (window as any).dataLayer.push(args);
+      }
+      (window as any).gtag = gtag;
+      gtag('js', new Date());
+      gtag('config', effectiveMeasurementId, { send_page_view: true });
+    }
+
+    const supported = await isAnalyticsSupported();
+    if (supported && effectiveMeasurementId) {
+      analyticsInstance = getAnalytics(app);
+    }
+  } catch {
+    // Ignore analytics blockers (e.g. adblockers or offline preview)
+  }
+}
+
+export function trackPageView(sectionName: string, subTab?: string): void {
+  if (typeof window === 'undefined') return;
+  const pagePath = subTab ? `/${sectionName}/${subTab}` : `/${sectionName}`;
+  const pageTitle = `Garden State Warriors - ${sectionName}${subTab ? ` (${subTab})` : ''}`;
+
+  try {
+    if (analyticsInstance) {
+      logEvent(analyticsInstance, 'page_view', {
+        page_path: pagePath,
+        page_title: pageTitle,
+      });
+    }
+    if (typeof (window as any).gtag === 'function') {
+      (window as any).gtag('event', 'page_view', {
+        page_path: pagePath,
+        page_title: pageTitle,
+      });
+    }
+  } catch {
+    // Ignore analytics errors
+  }
+}
+
+export function trackCustomEvent(eventName: string, params?: Record<string, any>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (analyticsInstance) {
+      logEvent(analyticsInstance, eventName, params);
+    }
+    if (typeof (window as any).gtag === 'function') {
+      (window as any).gtag('event', eventName, params);
+    }
+  } catch {
+    // Ignore analytics errors
+  }
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -77,6 +161,7 @@ async function testConnection() {
   }
 }
 testConnection();
+initWebsiteAnalytics();
 
 function base64ToObjectUrl(base64Payload: string, mimeType: string): string {
   const binaryStr = atob(base64Payload);
@@ -89,8 +174,8 @@ function base64ToObjectUrl(base64Payload: string, mimeType: string): string {
 }
 
 /**
- * Compresses an uploaded image file in the browser so that it is crisp (up to 900px)
- * and guaranteed to fit comfortably inside a permanent Firebase document (< 450KB).
+ * Compresses any uploaded image file (PNG, JPG, WebP, GIF, AVIF, BMP, SVG, etc.) in the browser
+ * so that it is crisp (up to 900px) and guaranteed to fit comfortably inside a permanent Firebase document (< 450KB).
  */
 async function encodeImageFileForFirebase(
   file: File,
@@ -103,10 +188,22 @@ async function encodeImageFileForFirebase(
     reader.onload = () => {
       const dataUrl = String(reader.result || '');
       const img = new Image();
-      img.onerror = () => reject(new Error('Invalid image file'));
+      img.onerror = () => {
+        // If browser Image decoder cannot rasterize a specialized format, store raw base64 if < 650KB
+        const commaIdx = dataUrl.indexOf(',');
+        const rawBase64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+        if (rawBase64 && rawBase64.length <= 700000) {
+          resolve({
+            mimeType: file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg',
+            base64Payload: rawBase64,
+          });
+        } else {
+          reject(new Error('Unsupported or oversized image format'));
+        }
+      };
       img.onload = () => {
-        let width = img.width;
-        let height = img.height;
+        let width = img.width || 600;
+        let height = img.height || 600;
         if (width > maxDimension || height > maxDimension) {
           if (width >= height) {
             height = Math.round((height * maxDimension) / width);
@@ -124,8 +221,8 @@ async function encodeImageFileForFirebase(
           reject(new Error('Canvas context unavailable'));
           return;
         }
-        const isPng = file.type === 'image/png';
-        const outputMime = isPng ? 'image/png' : 'image/jpeg';
+        const keepPng = file.type === 'image/png' || file.type === 'image/svg+xml';
+        const outputMime = keepPng ? 'image/png' : 'image/jpeg';
         ctx.drawImage(img, 0, 0, width, height);
         let encodedDataUrl = canvas.toDataURL(outputMime, quality);
 
@@ -180,33 +277,38 @@ export function extractFirebaseAssetId(rawUrl: string): string | null {
 }
 
 /**
- * Uploads a Sponsor Logo / Flyer file permanently to the Firebase server (100% client-side)
+ * Uploads any image file permanently to the Firebase server (100% client-side, serverless)
  * (`/sponsor_assets/{assetId}` in Firestore database `ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012`)
  * and returns the permanent HTTP URL to store in Google Sheets plus an immediate client-side preview URL.
  */
 export async function uploadSponsorImageToFirebase(
   file: File,
-  sponsorName = ''
+  ownerLabel = '',
+  prefix = 'sp'
 ): Promise<{ url: string; previewUrl: string; assetId: string }> {
   const { mimeType, base64Payload } = await encodeImageFileForFirebase(file);
 
-  const sanitizedBase = (file.name || 'logo')
+  const sanitizedBase = (file.name || 'image')
     .replace(/\.[^.]+$/, '')
     .replace(/[^a-zA-Z0-9_-]/g, '_')
     .slice(0, 40);
   const randomSuffix = Math.random().toString(36).slice(2, 8);
-  const assetId = `sp_${Date.now()}_${randomSuffix}_${sanitizedBase || 'logo'}`.slice(0, 120);
+  const safePrefix = prefix.replace(/[^a-zA-Z0-9]/g, '') || 'img';
+  const assetId = `${safePrefix}_${Date.now()}_${randomSuffix}_${sanitizedBase || 'img'}`.slice(
+    0,
+    120
+  );
 
-  const cleanFileName = (file.name || 'sponsor-logo.jpg')
+  const cleanFileName = (file.name || 'uploaded-image.jpg')
     .replace(/[^a-zA-Z0-9._-]/g, '_')
     .slice(0, 180);
-  const cleanSponsorName = (sponsorName || '').trim().slice(0, 180);
+  const cleanSponsorName = (ownerLabel || '').trim().slice(0, 180);
 
   const docPath = `sponsor_assets/${assetId}`;
   try {
     await setDoc(doc(db, 'sponsor_assets', assetId), {
       assetId,
-      fileName: cleanFileName || 'sponsor-logo.jpg',
+      fileName: cleanFileName || 'uploaded-image.jpg',
       mimeType,
       imageData: base64Payload,
       sponsorName: cleanSponsorName,
@@ -234,7 +336,26 @@ export async function uploadSponsorImageToFirebase(
 }
 
 /**
- * Fetches an uploaded sponsor image 100% client-side directly from the Firebase server by assetId
+ * Uploads multiple images (up to 5 max) permanently to the Firebase server in parallel
+ * for the Become a Warrior `MediaUrlsCsv` field.
+ */
+export async function uploadMultipleImagesToFirebase(
+  files: File[],
+  ownerLabel = ''
+): Promise<{ urls: string[]; previewUrls: string[]; assetIds: string[] }> {
+  const limited = files.slice(0, 5);
+  const uploadedList = await Promise.all(
+    limited.map((f, idx) => uploadSponsorImageToFirebase(f, ownerLabel, `war_m${idx + 1}`))
+  );
+  return {
+    urls: uploadedList.map((u) => u.url),
+    previewUrls: uploadedList.map((u) => u.previewUrl),
+    assetIds: uploadedList.map((u) => u.assetId),
+  };
+}
+
+/**
+ * Fetches an uploaded image 100% client-side directly from the Firebase server by assetId
  * using the client Firebase SDK (`getDoc(doc(db, 'sponsor_assets', assetId))`).
  */
 export async function resolveFirebaseAssetDirect(assetId: string): Promise<string | null> {
