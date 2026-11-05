@@ -40,6 +40,7 @@ import {
   submitSponsorToGoogleSheet,
   compressSponsorImageToDataUrl,
 } from './services/googleWorkspace';
+import { uploadSponsorImageToFirebase } from './services/firebaseStorage';
 import {
   fetchSupabasePlayers,
   isSupabaseConfigured,
@@ -102,7 +103,10 @@ export default function App() {
   const [sponsorWebsiteError, setSponsorWebsiteError] = useState<string>('');
   const [sponsorMessage, setSponsorMessage] = useState<string>('');
   const [sponsorLogoDataUrl, setSponsorLogoDataUrl] = useState<string>('');
+  const [sponsorFirebaseLogoUrl, setSponsorFirebaseLogoUrl] = useState<string>('');
+  const [sponsorLogoFile, setSponsorLogoFile] = useState<File | null>(null);
   const [sponsorLogoFileName, setSponsorLogoFileName] = useState<string>('');
+  const [sponsorLogoUploading, setSponsorLogoUploading] = useState<boolean>(false);
   const [sponsorSubmitting, setSponsorSubmitting] = useState<boolean>(false);
   const [sponsorStatus, setSponsorStatus] = useState<{
     type: 'success' | 'error';
@@ -128,15 +132,26 @@ export default function App() {
   const handleSponsorFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setSponsorLogoFile(file);
     setSponsorLogoFileName(file.name);
+    setSponsorFirebaseLogoUrl('');
+    setSponsorLogoUploading(true);
     try {
-      const compressed = await compressSponsorImageToDataUrl(file);
+      const [compressed, firebaseUrl] = await Promise.all([
+        compressSponsorImageToDataUrl(file),
+        uploadSponsorImageToFirebase(file),
+      ]);
       setSponsorLogoDataUrl(compressed);
+      if (firebaseUrl) {
+        setSponsorFirebaseLogoUrl(firebaseUrl);
+      }
     } catch {
       setSponsorStatus({
         type: 'error',
         message: 'Could not process the selected image file. Please try another image.',
       });
+    } finally {
+      setSponsorLogoUploading(false);
     }
   };
 
@@ -169,7 +184,9 @@ export default function App() {
       preferredContact: sponsorPreferredContact,
       website: sponsorWebsite.trim(),
       message: sponsorMessage.trim(),
-      logoUrl: sponsorLogoDataUrl,
+      logoUrl: sponsorFirebaseLogoUrl || sponsorLogoDataUrl,
+      logoFile: sponsorFirebaseLogoUrl ? null : sponsorLogoFile,
+      logoFileName: sponsorLogoFileName,
     });
     setSponsorSubmitting(false);
 
@@ -183,6 +200,8 @@ export default function App() {
       setSponsorWebsiteError('');
       setSponsorMessage('');
       setSponsorLogoDataUrl('');
+      setSponsorFirebaseLogoUrl('');
+      setSponsorLogoFile(null);
       setSponsorLogoFileName('');
     } else {
       setSponsorStatus({ type: 'error', message: result.message });
@@ -1935,11 +1954,13 @@ export default function App() {
                         onChange={handleSponsorFileChange}
                         className="hidden"
                       />
-                      {sponsorLogoDataUrl && (
+                      {(sponsorLogoDataUrl || sponsorFirebaseLogoUrl) && (
                         <button
                           type="button"
                           onClick={() => {
                             setSponsorLogoDataUrl('');
+                            setSponsorFirebaseLogoUrl('');
+                            setSponsorLogoFile(null);
                             setSponsorLogoFileName('');
                           }}
                           className="px-2.5 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/60 text-xs text-red-200 transition-colors"
@@ -1950,15 +1971,23 @@ export default function App() {
                     </div>
                   </div>
 
-                  {sponsorLogoDataUrl && (
+                  {sponsorLogoUploading && (
+                    <p className="text-xs text-[#EAB308] font-mono-tabular">
+                      Uploading image to Firebase Storage...
+                    </p>
+                  )}
+
+                  {(sponsorLogoDataUrl || sponsorFirebaseLogoUrl) && (
                     <div className="p-3 rounded-xl bg-[#070C09] border border-white/10 inline-flex items-center gap-3">
                       <img
-                        src={sponsorLogoDataUrl}
+                        src={sponsorLogoDataUrl || sponsorFirebaseLogoUrl}
                         alt="Uploaded Sponsor Logo Preview"
                         className="h-16 w-auto object-contain rounded bg-black/40 p-1.5 border border-white/10"
                       />
                       <span className="text-xs text-neutral-300 font-mono-tabular">
-                        Preview ready
+                        {sponsorFirebaseLogoUrl
+                          ? 'Uploaded to Firebase Storage & ready for Google Sheets'
+                          : 'Image ready for Google Sheets upload'}
                       </span>
                     </div>
                   )}

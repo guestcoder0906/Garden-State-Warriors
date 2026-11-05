@@ -141,9 +141,59 @@ function normalizeHeaderKey(header: string): string {
 export function cleanSheetCell(val: unknown): string {
   if (val === null || val === undefined) return '';
   const str = String(val).trim();
-  if (!str || str === '--' || str === '—') return '';
+  if (!str || str === '--' || str === '—' || str === 'CellImage') return '';
   if (str.startsWith('[') && str.endsWith(']')) return '';
   return str;
+}
+
+/**
+ * Normalizes any image cell value from Google Sheets:
+ * - Extracts the URL inside `=IMAGE("https://...")` formulas if present
+ * - Converts Google Drive sharing links (`drive.google.com/file/d/ID/view`, `drive.google.com/open?id=ID`, `drive.google.com/uc?id=ID`)
+ *   into direct embeddable `https://lh3.googleusercontent.com/d/ID` image URLs
+ * - Preserves Firebase Storage URLs, `lh3.googleusercontent.com` in-cell/Google Photos URLs, `data:image/...` URLs, and standard URLs
+ */
+export function normalizeSheetImageUrl(val: unknown): string {
+  const cleaned = cleanSheetCell(val);
+  if (!cleaned) return '';
+
+  // 1. Unwrap =IMAGE("https://...") formula if present
+  const formulaMatch = cleaned.match(/^=\s*IMAGE\s*\(\s*["']([^"']+)["']/i);
+  const candidate = formulaMatch && formulaMatch[1] ? formulaMatch[1].trim() : cleaned;
+  if (!candidate || candidate === 'CellImage') return '';
+
+  // 2. Convert Google Drive file sharing links to direct embeddable image URLs
+  const driveFileMatch = candidate.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+  if (driveFileMatch && driveFileMatch[1]) {
+    return `https://lh3.googleusercontent.com/d/${driveFileMatch[1]}`;
+  }
+  const driveIdParamMatch = candidate.match(/drive\.google\.com\/(?:open|uc|thumbnail)\?[^#]*\bid=([a-zA-Z0-9_-]+)/i);
+  if (driveIdParamMatch && driveIdParamMatch[1]) {
+    return `https://lh3.googleusercontent.com/d/${driveIdParamMatch[1]}`;
+  }
+
+  return candidate;
+}
+
+/**
+ * Splits a MediaUrlsCsv cell that may contain either:
+ * - A single in-cell image URL / Google Photos URL / `data:image/...` URL, OR
+ * - Multiple comma-separated image/video URLs
+ */
+export function splitMediaUrlsCell(rawMedia: unknown): string[] {
+  const cleaned = cleanSheetCell(rawMedia);
+  if (!cleaned) return [];
+  if (cleaned.startsWith('data:image/')) {
+    return [cleaned];
+  }
+  if (/^=\s*IMAGE\s*\(/i.test(cleaned)) {
+    const single = normalizeSheetImageUrl(cleaned);
+    return single ? [single] : [];
+  }
+  return cleaned
+    .split(',')
+    .map((u) => normalizeSheetImageUrl(u))
+    .filter(Boolean);
 }
 
 /**
@@ -237,8 +287,8 @@ export function parseSheetRowsToPlayers(
     const hometown = getCell(idxHometown);
     const rawBio = getCell(idxBio);
     const rawMeaning = getCell(idxMeaning);
-    const jerseyPhotoUrl = getCell(idxJerseyPhoto) || undefined;
-    const militaryPhotoUrl = getCell(idxMilitaryPhoto) || undefined;
+    const jerseyPhotoUrl = normalizeSheetImageUrl(getCell(idxJerseyPhoto)) || undefined;
+    const militaryPhotoUrl = normalizeSheetImageUrl(getCell(idxMilitaryPhoto)) || undefined;
     const rawMedia = getCell(idxMedia);
 
     let tierTab = rawTier;
@@ -273,12 +323,7 @@ export function parseSheetRowsToPlayers(
     const bio = rawBio;
     const whatWarriorsMeans = rawMeaning;
 
-    const mediaUrls = rawMedia
-      ? rawMedia
-          .split(',')
-          .map((u) => cleanSheetCell(u))
-          .filter(Boolean)
-      : [];
+    const mediaUrls = splitMediaUrlsCell(rawMedia);
 
     const mediaGallery: PlayerMediaItem[] = mediaUrls.map((url, idx) => ({
       id: `sheet-media-${i}-${idx}`,
@@ -377,7 +422,7 @@ export function parseSheetRowsToStaff(
     const branchOrBackground = getCell(idxBranch);
     const rank = getCell(idxRank);
     const caption = getCell(idxCaption);
-    const photoUrl = getCell(idxPhoto) || undefined;
+    const photoUrl = normalizeSheetImageUrl(getCell(idxPhoto)) || undefined;
 
     staffList.push({
       id: `sheet-staff-${i}-${(role || name || `row-${i}`).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
@@ -436,7 +481,7 @@ export function parseSheetRowsToEvents(
     const location = getCell(idxLoc);
     const category = getCell(idxCategory);
     const description = getCell(idxDesc);
-    const imageUrl = getCell(idxImg) || undefined;
+    const imageUrl = normalizeSheetImageUrl(getCell(idxImg)) || undefined;
     const externalUrl = getCell(idxUrl) || undefined;
 
     events.push({
@@ -488,7 +533,7 @@ export function parseSheetRowsToFans(rows: string[][]): FanItem[] {
       : 'Family';
     const relatedPlayer = getCell(idxPlayer) || undefined;
     const caption = getCell(idxCaption);
-    const photoUrl = getCell(idxPhoto) || undefined;
+    const photoUrl = normalizeSheetImageUrl(getCell(idxPhoto)) || undefined;
 
     fans.push({
       id: `sheet-fan-${i}`,
@@ -599,7 +644,7 @@ export function parseSheetRowsToSponsors(rows: string[][]): SponsorItem[] {
     const message = rawMsg || rawDesc;
     const description = message;
     const website = getCell(idxWeb) || undefined;
-    const logoUrl = getCell(idxLogo) || undefined;
+    const logoUrl = normalizeSheetImageUrl(getCell(idxLogo)) || undefined;
 
     if (!name && !logoUrl && !message && !website && !tier) continue;
 
@@ -708,8 +753,8 @@ export function parseAppsScriptPayload(payload: {
       const hometown = rawHometown;
       const bio = cleanSheetCell(p.bio);
       const whatWarriorsMeans = cleanSheetCell(p.whatWarriorMeans || p.whatWarriorsMeans);
-      const jerseyPhotoUrl = cleanSheetCell(p.jerseyPhotoUrl) || undefined;
-      const militaryPhotoUrl = cleanSheetCell(p.militaryPhotoUrl) || undefined;
+      const jerseyPhotoUrl = normalizeSheetImageUrl(p.jerseyPhotoUrl) || undefined;
+      const militaryPhotoUrl = normalizeSheetImageUrl(p.militaryPhotoUrl) || undefined;
       const rawRoleBadge = cleanSheetCell(p.roleBadge);
 
       allPlayers.push({
@@ -749,7 +794,7 @@ export function parseAppsScriptPayload(payload: {
                   ? {
                       id: `m-${i}-${idx}`,
                       type: /\.(mp4|webm|mov)$/i.test(url) ? 'video' : 'image',
-                      url: cleanSheetCell(url),
+                      url: normalizeSheetImageUrl(url),
                       caption: name ? `${name} — Media #${idx + 1}` : `Media #${idx + 1}`,
                     }
                   : url
@@ -767,7 +812,7 @@ export function parseAppsScriptPayload(payload: {
         const name = cleanSheetCell(b.name);
         const role = cleanSheetCell(b.role);
         const caption = cleanSheetCell(b.caption);
-        const photoUrl = cleanSheetCell(b.photoUrl) || undefined;
+        const photoUrl = normalizeSheetImageUrl(b.photoUrl) || undefined;
         if (!name && !role && !caption && !photoUrl) return;
         allStaff.push({
           id: b.id || `as-board-${i}`,
@@ -786,7 +831,7 @@ export function parseAppsScriptPayload(payload: {
         const name = cleanSheetCell(c.name);
         const role = cleanSheetCell(c.role);
         const caption = cleanSheetCell(c.caption);
-        const photoUrl = cleanSheetCell(c.photoUrl) || undefined;
+        const photoUrl = normalizeSheetImageUrl(c.photoUrl) || undefined;
         if (!name && !role && !caption && !photoUrl) return;
         allStaff.push({
           id: c.id || `as-coach-${i}`,
@@ -810,7 +855,7 @@ export function parseAppsScriptPayload(payload: {
       const location = cleanSheetCell(ev.location);
       const category = cleanSheetCell(ev.category);
       const description = cleanSheetCell(ev.description);
-      const imgCandidate = cleanSheetCell(ev.imageUrl || ev.flyerPlaceholder);
+      const imgCandidate = normalizeSheetImageUrl(ev.imageUrl || ev.flyerPlaceholder);
       const externalUrl = cleanSheetCell(ev.externalUrl);
       if (!title && !date && !location && !description && !imgCandidate) return;
       allEvents.push({
@@ -829,6 +874,31 @@ export function parseAppsScriptPayload(payload: {
     });
   }
 
+  if (allFans.length === 0 && Array.isArray(payload?.fans)) {
+    payload.fans.forEach((f: any, i: number) => {
+      const title = cleanSheetCell(f.title || f.name);
+      const rawCat = cleanSheetCell(f.category || f.role);
+      const category: 'Family' | 'Friends' | 'Pets' = /pet|dog|cat/i.test(rawCat)
+        ? 'Pets'
+        : /friend/i.test(rawCat)
+        ? 'Friends'
+        : 'Family';
+      const relatedPlayer = cleanSheetCell(f.relatedPlayer) || undefined;
+      const caption = cleanSheetCell(f.caption);
+      const photoUrl = normalizeSheetImageUrl(f.photoUrl) || undefined;
+      if (!title && !rawCat && !caption && !photoUrl) return;
+      allFans.push({
+        id: f.id || `as-fan-${i}`,
+        title,
+        category: rawCat ? category : ('' as any),
+        relatedPlayer,
+        caption,
+        photoUrl,
+        photoPlaceholder: '',
+      });
+    });
+  }
+
   if (allSponsors.length === 0 && Array.isArray(payload?.sponsors)) {
     payload.sponsors.forEach((sp: any, i: number) => {
       if (sp.verified !== undefined && !isSheetCheckmarkTrue(sp.verified)) {
@@ -839,7 +909,7 @@ export function parseAppsScriptPayload(payload: {
       const message = cleanSheetCell(sp.message || sp.description);
       const description = message;
       const website = cleanSheetCell(sp.website) || undefined;
-      const logoUrl = cleanSheetCell(sp.logoUrl || sp.photoUrl || sp.imageUrl) || undefined;
+      const logoUrl = normalizeSheetImageUrl(sp.logoUrl || sp.photoUrl || sp.imageUrl) || undefined;
       if (!name && !logoUrl && !message && !website && !tier) return;
       allSponsors.push({
         id: sp.id || `as-sponsor-${i}`,

@@ -10,6 +10,8 @@ import {
   filterPlayers,
   isValidWebsiteUrl,
   normalizeWebsiteUrl,
+  normalizeSheetImageUrl,
+  splitMediaUrlsCell,
 } from './rosterLogic.ts';
 
 test('extractSpreadsheetId extracts exact user spreadsheet ID', () => {
@@ -101,6 +103,25 @@ test('isValidWebsiteUrl validates valid website URLs via regex and rejects inval
   assert.equal(isValidWebsiteUrl('http://invalid'), false);
   assert.equal(normalizeWebsiteUrl('www.example.com'), 'https://www.example.com');
   assert.equal(normalizeWebsiteUrl('https://example.com'), 'https://example.com');
+});
+
+test('normalizeSheetImageUrl and splitMediaUrlsCell handle in-cell IMAGE formulas, Drive URLs, single in-cell images, and CSV URLs', () => {
+  assert.equal(
+    normalizeSheetImageUrl('=IMAGE("https://lh3.googleusercontent.com/d/abc123")'),
+    'https://lh3.googleusercontent.com/d/abc123'
+  );
+  assert.equal(
+    normalizeSheetImageUrl('https://drive.google.com/file/d/1xyz987/view?usp=sharing'),
+    'https://lh3.googleusercontent.com/d/1xyz987'
+  );
+  assert.deepEqual(
+    splitMediaUrlsCell('=IMAGE("https://lh3.googleusercontent.com/d/singlePhoto")'),
+    ['https://lh3.googleusercontent.com/d/singlePhoto']
+  );
+  assert.deepEqual(
+    splitMediaUrlsCell('https://example.com/one.jpg, https://drive.google.com/file/d/2abc/view'),
+    ['https://example.com/one.jpg', 'https://lh3.googleusercontent.com/d/2abc']
+  );
 });
 
 test('formatReplaceTag formats missing media and text instructions accurately', () => {

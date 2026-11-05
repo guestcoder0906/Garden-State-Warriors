@@ -6,6 +6,7 @@ import {
   SponsorItem,
   parseAppsScriptPayload,
 } from '../utils/rosterLogic';
+import { uploadSponsorImageToFirebase } from './firebaseStorage';
 
 export interface DynamicSyncResult {
   players: PlayerProfile[];
@@ -24,12 +25,16 @@ export interface SponsorSubmissionInput {
   website: string;
   message: string;
   logoUrl: string;
+  logoFile?: File | null;
+  logoBase64?: string;
+  logoMimeType?: string;
+  logoFileName?: string;
 }
 
 /**
  * Compresses an uploaded Sponsor Logo / Flyer image file on a canvas so its data URL
- * stays well under the 50,000-character Google Sheets cell limit and can be written directly
- * into the `LogoUrl` column of the `Sponsors` tab by Google Apps Script.
+ * stays well under the Google Sheets 50,000-character cell limit (< 22,000 chars)
+ * and can also be decoded by Google Apps Script DriveApp to create a hosted Google image URL.
  */
 export async function compressSponsorImageToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -39,7 +44,7 @@ export async function compressSponsorImageToDataUrl(file: File): Promise<string>
       const img = new Image();
       img.onerror = () => reject(new Error('Invalid image file.'));
       img.onload = () => {
-        const maxDim = 380;
+        const maxDim = 320;
         let width = img.width;
         let height = img.height;
         if (width > maxDim || height > maxDim) {
@@ -60,9 +65,12 @@ export async function compressSponsorImageToDataUrl(file: File): Promise<string>
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        let dataUrl = canvas.toDataURL('image/webp', 0.78);
-        if (dataUrl.length > 42000 || !dataUrl.startsWith('data:image/webp')) {
-          dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+        let dataUrl = canvas.toDataURL('image/webp', 0.72);
+        if (dataUrl.length > 24000 || !dataUrl.startsWith('data:image/webp')) {
+          dataUrl = canvas.toDataURL('image/jpeg', 0.68);
+        }
+        if (dataUrl.length > 24000) {
+          dataUrl = canvas.toDataURL('image/jpeg', 0.52);
         }
         resolve(dataUrl);
       };
@@ -74,16 +82,48 @@ export async function compressSponsorImageToDataUrl(file: File): Promise<string>
 
 /**
  * Submits the direct website "Become a Sponsor" form to the Google Sheet (`Sponsors` tab)
- * via Google Apps Script (`doPost`). New entries are saved with `Verified = FALSE` (unchecked)
- * so they only appear on the Home page once the Verified checkbox is checked in Google Sheets.
+ * via Google Apps Script (`doPost`).
+ * 1. If a logo/flyer file is attached, uploads it to Firebase Storage first to obtain a
+ *    clean `https://firebasestorage.googleapis.com/...` URL.
+ * 2. Also passes the compressed image data (`logoBase64`) to Apps Script `doPost` so if
+ *    Firebase Storage rules block unauthenticated uploads, Apps Script automatically saves
+ *    the image to Google Drive (`DriveApp`) or stores the compact image URL directly in the
+ *    `LogoUrl` column so it is never empty and renders on the Home page once Verified is checked.
  */
 export async function submitSponsorToGoogleSheet(
   input: SponsorSubmissionInput
-): Promise<{ ok: boolean; message: string }> {
+): Promise<{ ok: boolean; message: string; uploadedLogoUrl?: string }> {
   const appsScriptUrl =
     import.meta.env.VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL ||
     import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
     '';
+
+  let finalLogoUrl = (input.logoUrl || '').trim();
+  let logoBase64 = input.logoBase64 || '';
+  let logoMimeType = input.logoMimeType || 'image/jpeg';
+  let logoFileName = input.logoFileName || 'sponsor-logo.jpg';
+
+  // Step 1: If a File object was provided, upload to Firebase Storage for a public Firebase URL
+  if (input.logoFile) {
+    logoFileName = input.logoFile.name || logoFileName;
+    const firebaseUrl = await uploadSponsorImageToFirebase(input.logoFile);
+    if (firebaseUrl) {
+      finalLogoUrl = firebaseUrl;
+    }
+  }
+
+  // Extract raw base64 payload if we also have a data:image/... URL
+  if (input.logoUrl && input.logoUrl.startsWith('data:image/')) {
+    const commaIdx = input.logoUrl.indexOf(',');
+    if (commaIdx > 0) {
+      const headerPart = input.logoUrl.slice(0, commaIdx);
+      const mimeMatch = headerPart.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64$/i);
+      if (mimeMatch && mimeMatch[1]) {
+        logoMimeType = mimeMatch[1];
+      }
+      logoBase64 = input.logoUrl.slice(commaIdx + 1);
+    }
+  }
 
   const bodyPayload = {
     action: 'submitSponsor',
@@ -98,7 +138,10 @@ export async function submitSponsorToGoogleSheet(
     website: input.website.trim(),
     message: input.message.trim(),
     description: input.message.trim(),
-    logoUrl: input.logoUrl || '',
+    logoUrl: finalLogoUrl,
+    logoBase64,
+    logoMimeType,
+    logoFileName,
   };
 
   // 1. Direct POST to Google Apps Script Web App (`text/plain` avoids CORS preflight)
@@ -116,10 +159,12 @@ export async function submitSponsorToGoogleSheet(
         body: JSON.stringify(bodyPayload),
       });
       if (res.ok) {
+        const resData = await res.json().catch(() => null);
         return {
           ok: true,
+          uploadedLogoUrl: resData?.logoUrl || finalLogoUrl,
           message:
-            'Thank you! Your sponsor application has been added to our Google Sheet and will appear on the Home page once verified.',
+            'Thank you! Your sponsor application and logo have been saved to our Google Sheet and will appear on the Home page once verified.',
         };
       }
     } catch {
@@ -141,8 +186,9 @@ export async function submitSponsorToGoogleSheet(
       if (data && data.ok) {
         return {
           ok: true,
+          uploadedLogoUrl: data.logoUrl || finalLogoUrl,
           message:
-            'Thank you! Your sponsor application has been added to our Google Sheet and will appear on the Home page once verified.',
+            'Thank you! Your sponsor application and logo have been saved to our Google Sheet and will appear on the Home page once verified.',
         };
       }
     }
