@@ -5,8 +5,11 @@ import {
   extractSpreadsheetId,
   formatReplaceTag,
   parseSheetRowsToPlayers,
+  parseSheetRowsToSponsors,
   parseAppsScriptPayload,
   filterPlayers,
+  isValidWebsiteUrl,
+  normalizeWebsiteUrl,
 } from './rosterLogic.ts';
 
 test('extractSpreadsheetId extracts exact user spreadsheet ID', () => {
@@ -74,6 +77,30 @@ test('filterPlayers filters by tierTab, rankFilter, and searchQuery', () => {
   assert.equal(filterPlayers(players, { rankFilter: 'PO1' }).length, 1);
   assert.equal(filterPlayers(players, { tierTab: 'Alpha' }).length, 1);
   assert.equal(filterPlayers(players, { searchQuery: '82' }).length, 1);
+});
+
+test('parseSheetRowsToSponsors only returns sponsors where Verified checkbox is checked (TRUE) and parses Website & Message', () => {
+  const rows = [
+    ['Verified', 'Timestamp Submitted', 'Name', 'Phone', 'Email', 'Preferred Contact', 'Website', 'Message', 'LogoUrl'],
+    ['FALSE', '11/5/2026, 9:30 AM', 'Pending Sponsor', '555-1111', 'pending@example.com', 'Email', 'https://pending.com', 'Pending message', 'data:image/png;base64,abc'],
+    ['TRUE', '11/5/2026, 9:35 AM', 'Approved Sponsor', '555-2222', 'approved@example.com', 'Text, Call', 'www.approved.org', 'Proud to support NJ veterans!', 'https://example.com/logo.png'],
+  ];
+  const sponsors = parseSheetRowsToSponsors(rows);
+  assert.equal(sponsors.length, 1);
+  assert.equal(sponsors[0].name, 'Approved Sponsor');
+  assert.equal(sponsors[0].website, 'www.approved.org');
+  assert.equal(sponsors[0].message, 'Proud to support NJ veterans!');
+  assert.equal(sponsors[0].logoUrl, 'https://example.com/logo.png');
+});
+
+test('isValidWebsiteUrl validates valid website URLs via regex and rejects invalid strings', () => {
+  assert.equal(isValidWebsiteUrl('https://www.gardenstatewarriors.org'), true);
+  assert.equal(isValidWebsiteUrl('www.example.com/sponsors'), true);
+  assert.equal(isValidWebsiteUrl('example.org'), true);
+  assert.equal(isValidWebsiteUrl('not a website'), false);
+  assert.equal(isValidWebsiteUrl('http://invalid'), false);
+  assert.equal(normalizeWebsiteUrl('www.example.com'), 'https://www.example.com');
+  assert.equal(normalizeWebsiteUrl('https://example.com'), 'https://example.com');
 });
 
 test('formatReplaceTag formats missing media and text instructions accurately', () => {

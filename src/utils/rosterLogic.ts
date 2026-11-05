@@ -79,6 +79,7 @@ export interface SponsorItem {
   name: string;
   tier: string;
   description: string;
+  message?: string;
   website?: string;
   logoUrl?: string;
   placeholderNote: string;
@@ -503,20 +504,78 @@ export function parseSheetRowsToFans(rows: string[][]): FanItem[] {
 }
 
 /**
- * Parses an optional "Sponsors" tab from the Google Sheet.
- * Dedicated Sponsors Tab Columns (all optional):
- * Name, Tier, Description, Website, LogoUrl
+ * Returns true if a Google Sheets checkbox / Verified column cell is checked.
+ */
+export function isSheetCheckmarkTrue(val: unknown): boolean {
+  if (val === true || val === 1) return true;
+  if (val === null || val === undefined || val === false) return false;
+  const s = String(val).trim().toLowerCase();
+  return (
+    s === 'true' ||
+    s === 'yes' ||
+    s === '1' ||
+    s === 'checked' ||
+    s === '✓' ||
+    s === '✔' ||
+    s === '☑' ||
+    s === 'x' ||
+    s === 'y'
+  );
+}
+
+/**
+ * Regex pattern for validating a sponsor website URL (supports optional http/https, subdomains, domain, TLD, and optional path/query).
+ */
+export const WEBSITE_URL_REGEX =
+  /^(https?:\/\/)?(www\.)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?(\/[^\s]*)?$/i;
+
+/**
+ * Validates whether a given string is a valid website URL using WEBSITE_URL_REGEX.
+ */
+export function isValidWebsiteUrl(input: string): boolean {
+  const trimmed = String(input || '').trim();
+  if (!trimmed) return false;
+  return WEBSITE_URL_REGEX.test(trimmed);
+}
+
+/**
+ * Ensures a valid website URL includes an http:// or https:// protocol prefix for anchor hrefs.
+ */
+export function normalizeWebsiteUrl(input: string): string {
+  const trimmed = String(input || '').trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+/**
+ * Parses the "Sponsors" tab from the Google Sheet.
+ * Dedicated Sponsors Tab Columns:
+ * Verified, Timestamp Submitted, Name, Phone, Email, Preferred Contact, Website, Message, LogoUrl, Tier
+ *
+ * Only rows where the "Verified" column checkbox is checked (TRUE) are returned for the Home page.
  */
 export function parseSheetRowsToSponsors(rows: string[][]): SponsorItem[] {
   if (!rows || rows.length < 2) return [];
   const normHeaders = rows[0].map(normalizeHeaderKey);
   const findCol = (keys: string[]) => normHeaders.findIndex((h) => keys.some((k) => h.includes(k)));
 
+  const idxVerified = findCol(['verified', 'approved', 'active', 'show']);
   const idxName = findCol(['name', 'sponsor', 'title', 'company']);
   const idxTier = findCol(['tier', 'level', 'category', 'type']);
+  const idxMsg = findCol(['message', 'quote', 'note', 'comment', 'testimony']);
   const idxDesc = findCol(['description', 'caption', 'bio', 'details']);
-  const idxWeb = findCol(['website', 'url', 'link']);
-  const idxLogo = findCol(['logourl', 'logo', 'photourl', 'imageurl', 'image']);
+  const idxWeb = findCol(['website', 'url', 'link', 'site', 'webpage']);
+  const idxLogo = findCol([
+    'logourl',
+    'logo',
+    'sponsorlogo',
+    'flyer',
+    'photourl',
+    'imageurl',
+    'image',
+    'upload',
+  ]);
 
   const sponsors: SponsorItem[] = [];
   for (let i = 1; i < rows.length; i++) {
@@ -525,17 +584,31 @@ export function parseSheetRowsToSponsors(rows: string[][]): SponsorItem[] {
     const getCell = (idx: number) =>
       idx >= 0 && row[idx] !== undefined ? cleanSheetCell(row[idx]) : '';
 
+    // If a Verified column exists in the sheet, only include rows where Verified is checked (TRUE)
+    if (idxVerified >= 0) {
+      const rawVerified = row[idxVerified];
+      if (!isSheetCheckmarkTrue(rawVerified)) {
+        continue;
+      }
+    }
+
     const name = getCell(idxName);
     const tier = getCell(idxTier);
-    const description = getCell(idxDesc);
+    const rawMsg = getCell(idxMsg);
+    const rawDesc = getCell(idxDesc);
+    const message = rawMsg || rawDesc;
+    const description = message;
     const website = getCell(idxWeb) || undefined;
     const logoUrl = getCell(idxLogo) || undefined;
+
+    if (!name && !logoUrl && !message && !website && !tier) continue;
 
     sponsors.push({
       id: `sheet-sponsor-${i}`,
       name,
       tier,
       description,
+      message: message || undefined,
       website,
       logoUrl,
       placeholderNote: '',
@@ -752,6 +825,31 @@ export function parseAppsScriptPayload(payload: {
         placeholderBanner: '',
         externalUrl: externalUrl || undefined,
         isPlaceholder: false,
+      });
+    });
+  }
+
+  if (allSponsors.length === 0 && Array.isArray(payload?.sponsors)) {
+    payload.sponsors.forEach((sp: any, i: number) => {
+      if (sp.verified !== undefined && !isSheetCheckmarkTrue(sp.verified)) {
+        return;
+      }
+      const name = cleanSheetCell(sp.name);
+      const tier = cleanSheetCell(sp.tier);
+      const message = cleanSheetCell(sp.message || sp.description);
+      const description = message;
+      const website = cleanSheetCell(sp.website) || undefined;
+      const logoUrl = cleanSheetCell(sp.logoUrl || sp.photoUrl || sp.imageUrl) || undefined;
+      if (!name && !logoUrl && !message && !website && !tier) return;
+      allSponsors.push({
+        id: sp.id || `as-sponsor-${i}`,
+        name,
+        tier,
+        description,
+        message: message || undefined,
+        website,
+        logoUrl,
+        placeholderNote: '',
       });
     });
   }

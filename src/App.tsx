@@ -21,6 +21,8 @@ import {
   ClubEvent,
   filterPlayers,
   formatReplaceTag,
+  isValidWebsiteUrl,
+  normalizeWebsiteUrl,
 } from './utils/rosterLogic';
 import {
   TEAM_LOGOS,
@@ -33,7 +35,11 @@ import {
   INITIAL_SPONSORS,
   INITIAL_EVENTS,
 } from './data/seedData';
-import { syncVerifiedGoogleSheet } from './services/googleWorkspace';
+import {
+  syncVerifiedGoogleSheet,
+  submitSponsorToGoogleSheet,
+  compressSponsorImageToDataUrl,
+} from './services/googleWorkspace';
 import {
   fetchSupabasePlayers,
   isSupabaseConfigured,
@@ -86,6 +92,102 @@ export default function App() {
   // Donate State
   const [selectedDonationAmount, setSelectedDonationAmount] = useState<number>(50);
   const [customDonationAmount, setCustomDonationAmount] = useState<string>('');
+
+  // Become a Sponsor Direct Website Form State (Connected to Google Apps Script -> Sponsors tab)
+  const [sponsorName, setSponsorName] = useState<string>('');
+  const [sponsorPhone, setSponsorPhone] = useState<string>('');
+  const [sponsorEmail, setSponsorEmail] = useState<string>('');
+  const [sponsorPreferredContact, setSponsorPreferredContact] = useState<string[]>([]);
+  const [sponsorWebsite, setSponsorWebsite] = useState<string>('');
+  const [sponsorWebsiteError, setSponsorWebsiteError] = useState<string>('');
+  const [sponsorMessage, setSponsorMessage] = useState<string>('');
+  const [sponsorLogoDataUrl, setSponsorLogoDataUrl] = useState<string>('');
+  const [sponsorLogoFileName, setSponsorLogoFileName] = useState<string>('');
+  const [sponsorSubmitting, setSponsorSubmitting] = useState<boolean>(false);
+  const [sponsorStatus, setSponsorStatus] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  const toggleSponsorContactMethod = (method: string) => {
+    setSponsorPreferredContact((prev) =>
+      prev.includes(method) ? prev.filter((m) => m !== method) : [...prev, method]
+    );
+  };
+
+  const handleSponsorWebsiteChange = (val: string) => {
+    setSponsorWebsite(val);
+    const trimmed = val.trim();
+    if (trimmed && !isValidWebsiteUrl(trimmed)) {
+      setSponsorWebsiteError('Please enter a valid website URL (e.g., https://example.com or www.example.com).');
+    } else {
+      setSponsorWebsiteError('');
+    }
+  };
+
+  const handleSponsorFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSponsorLogoFileName(file.name);
+    try {
+      const compressed = await compressSponsorImageToDataUrl(file);
+      setSponsorLogoDataUrl(compressed);
+    } catch {
+      setSponsorStatus({
+        type: 'error',
+        message: 'Could not process the selected image file. Please try another image.',
+      });
+    }
+  };
+
+  const handleSponsorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sponsorName.trim() && !sponsorEmail.trim() && !sponsorPhone.trim()) {
+      setSponsorStatus({
+        type: 'error',
+        message: 'Please enter at least your Name, Phone, or Email.',
+      });
+      return;
+    }
+
+    if (sponsorWebsite.trim() && !isValidWebsiteUrl(sponsorWebsite.trim())) {
+      setSponsorWebsiteError('Please enter a valid website URL (e.g., https://example.com or www.example.com).');
+      setSponsorStatus({
+        type: 'error',
+        message: 'Website must be a valid website URL (e.g., https://example.com).',
+      });
+      return;
+    }
+
+    setSponsorWebsiteError('');
+    setSponsorSubmitting(true);
+    setSponsorStatus(null);
+    const result = await submitSponsorToGoogleSheet({
+      name: sponsorName,
+      phone: sponsorPhone,
+      email: sponsorEmail,
+      preferredContact: sponsorPreferredContact,
+      website: sponsorWebsite.trim(),
+      message: sponsorMessage.trim(),
+      logoUrl: sponsorLogoDataUrl,
+    });
+    setSponsorSubmitting(false);
+
+    if (result.ok) {
+      setSponsorStatus({ type: 'success', message: result.message });
+      setSponsorName('');
+      setSponsorPhone('');
+      setSponsorEmail('');
+      setSponsorPreferredContact([]);
+      setSponsorWebsite('');
+      setSponsorWebsiteError('');
+      setSponsorMessage('');
+      setSponsorLogoDataUrl('');
+      setSponsorLogoFileName('');
+    } else {
+      setSponsorStatus({ type: 'error', message: result.message });
+    }
+  };
 
   // Dynamic Auto-Sync from Verified Google Sheet (`1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s`) via Apps Script / gviz
   useEffect(() => {
@@ -817,49 +919,55 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {sponsors.map((sp) => (
-                    <div
-                      key={sp.id}
-                      className="bg-[#080E0B] border border-white/[0.08] rounded-xl p-5 flex flex-col justify-between gap-3"
-                    >
-                      <div className="space-y-1.5">
-                        {sp.tier && (
-                          <span className="text-[11px] font-mono-tabular text-[#EAB308]">
-                            {sp.tier}
-                          </span>
+                  {sponsors.map((sp) => {
+                    const sponsorMsg = (sp.message || sp.description || '').trim();
+                    const hasTextInfo = Boolean(sp.tier || sp.name || sponsorMsg || sp.website);
+                    return (
+                      <div
+                        key={sp.id}
+                        className="bg-[#080E0B] border border-white/[0.08] rounded-xl p-5 flex flex-col justify-between gap-3"
+                      >
+                        {hasTextInfo && (
+                          <div className="space-y-1.5">
+                            {sp.tier && (
+                              <span className="text-[11px] font-mono-tabular text-[#EAB308] block">
+                                {sp.tier}
+                              </span>
+                            )}
+                            {sp.name && (
+                              <h3 className="text-lg font-bold text-white font-display uppercase">
+                                {sp.name}
+                              </h3>
+                            )}
+                            {sponsorMsg && (
+                              <p className="text-xs text-neutral-300 leading-relaxed font-mono-tabular italic">
+                                <q>{sponsorMsg}</q>
+                              </p>
+                            )}
+                            {sp.website && (
+                              <a
+                                href={normalizeWebsiteUrl(sp.website)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-[#EAB308] hover:underline pt-1"
+                              >
+                                <span>Visit Website</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
                         )}
-                        {sp.name && (
-                          <h3 className="text-lg font-bold text-white font-display uppercase">
-                            {sp.name}
-                          </h3>
-                        )}
-                        {sp.description && (
-                          <p className="text-xs text-neutral-300 leading-relaxed font-mono-tabular">
-                            {sp.description}
-                          </p>
-                        )}
-                        {sp.website && (
-                          <a
-                            href={sp.website}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs text-[#EAB308] hover:underline pt-1"
-                          >
-                            <span>Visit Website</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
+                        {sp.logoUrl && (
+                          <img
+                            src={sp.logoUrl}
+                            alt={sp.name || 'Sponsor Logo'}
+                            className="h-14 w-auto object-contain rounded bg-black/40 p-2 border border-white/10 self-start"
+                            referrerPolicy="no-referrer"
+                          />
                         )}
                       </div>
-                      {sp.logoUrl && (
-                        <img
-                          src={sp.logoUrl}
-                          alt={sp.name || 'Sponsor Logo'}
-                          className="h-14 w-auto object-contain rounded bg-black/40 p-2 border border-white/10"
-                          referrerPolicy="no-referrer"
-                        />
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
@@ -1639,6 +1747,244 @@ export default function App() {
                 </span>
               </a>
             </div>
+
+            {/* BECOME A SPONSOR DIRECT WEBSITE FORM (Connected to Google Sheets via Apps Script) */}
+            <section
+              aria-labelledby="become-a-sponsor-heading"
+              className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 sm:p-8 space-y-6"
+            >
+              <div className="space-y-1.5 border-b border-white/10 pb-4">
+                <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
+                  501(c)(3) Community Partnership
+                </span>
+                <h2
+                  id="become-a-sponsor-heading"
+                  className="text-2xl sm:text-3xl font-extrabold text-white font-display uppercase"
+                >
+                  Become a Sponsor
+                </h2>
+                <p className="text-xs sm:text-sm text-neutral-300">
+                  Submit your sponsor information and logo/flyer below. Once verified by the club,
+                  your sponsorship will automatically appear on the Home page.
+                </p>
+              </div>
+
+              <form onSubmit={handleSponsorSubmit} className="space-y-5">
+                {/* Name */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="sponsor-name"
+                    className="block text-xs font-semibold text-neutral-200 uppercase tracking-wider"
+                  >
+                    Name
+                  </label>
+                  <input
+                    id="sponsor-name"
+                    type="text"
+                    value={sponsorName}
+                    onChange={(e) => setSponsorName(e.target.value)}
+                    placeholder="Business, organization, or supporter name"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070C09] border border-white/15 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                  />
+                </div>
+
+                {/* Phone & Email */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="sponsor-phone"
+                      className="block text-xs font-semibold text-neutral-200 uppercase tracking-wider"
+                    >
+                      Phone
+                    </label>
+                    <input
+                      id="sponsor-phone"
+                      type="tel"
+                      value={sponsorPhone}
+                      onChange={(e) => setSponsorPhone(e.target.value)}
+                      placeholder="(555) 555-5555"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070C09] border border-white/15 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="sponsor-email"
+                      className="block text-xs font-semibold text-neutral-200 uppercase tracking-wider"
+                    >
+                      Email
+                    </label>
+                    <input
+                      id="sponsor-email"
+                      type="email"
+                      value={sponsorEmail}
+                      onChange={(e) => setSponsorEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070C09] border border-white/15 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Preferred contact (Select all: text, call, email) */}
+                <div className="space-y-2">
+                  <span className="block text-xs font-semibold text-neutral-200 uppercase tracking-wider">
+                    Preferred contact (Select all that apply)
+                  </span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {(['Text', 'Call', 'Email'] as const).map((method) => {
+                      const checked = sponsorPreferredContact.includes(method);
+                      return (
+                        <label
+                          key={method}
+                          className={`inline-flex items-center gap-2.5 px-4 py-2 rounded-xl border text-xs font-bold cursor-pointer transition-colors select-none ${
+                            checked
+                              ? 'bg-[#EAB308]/15 border-[#EAB308] text-[#EAB308]'
+                              : 'bg-[#070C09] border-white/15 text-neutral-300 hover:border-white/30'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSponsorContactMethod(method)}
+                            className="w-4 h-4 accent-[#EAB308] rounded"
+                          />
+                          <span className="uppercase tracking-wider">{method}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Website (Regex validated) */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="sponsor-website"
+                    className="block text-xs font-semibold text-neutral-200 uppercase tracking-wider"
+                  >
+                    Website
+                  </label>
+                  <input
+                    id="sponsor-website"
+                    type="text"
+                    inputMode="url"
+                    value={sponsorWebsite}
+                    onChange={(e) => handleSponsorWebsiteChange(e.target.value)}
+                    placeholder="https://www.example.com"
+                    aria-invalid={Boolean(sponsorWebsiteError)}
+                    className={`w-full px-3.5 py-2.5 rounded-xl bg-[#070C09] border text-sm text-white focus:outline-none ${
+                      sponsorWebsiteError
+                        ? 'border-red-500 focus:border-red-400'
+                        : 'border-white/15 focus:border-[#EAB308]'
+                    }`}
+                  />
+                  {sponsorWebsiteError && (
+                    <p className="text-xs text-red-400 font-mono-tabular">{sponsorWebsiteError}</p>
+                  )}
+                </div>
+
+                {/* Optional Message (Displayed quoted with <q> on Home page when verified) */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="sponsor-message"
+                    className="block text-xs font-semibold text-neutral-200 uppercase tracking-wider"
+                  >
+                    Message (Optional)
+                  </label>
+                  <textarea
+                    id="sponsor-message"
+                    rows={3}
+                    value={sponsorMessage}
+                    onChange={(e) => setSponsorMessage(e.target.value)}
+                    placeholder="Optional sponsor message or note to display on our Home page..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070C09] border border-white/15 text-sm text-white focus:border-[#EAB308] focus:outline-none"
+                  />
+                </div>
+
+                {/* Sponsor Logo/flyer image upload */}
+                <div className="space-y-2">
+                  <label
+                    htmlFor="sponsor-logo-upload"
+                    className="block text-xs font-semibold text-neutral-200 uppercase tracking-wider"
+                  >
+                    Sponsor Logo / Flyer Image Upload
+                  </label>
+                  <div className="p-4 rounded-xl bg-[#070C09] border border-dashed border-white/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <Camera className="w-5 h-5 text-[#EAB308] shrink-0" />
+                      <div className="text-xs text-neutral-300">
+                        <span className="font-semibold text-white block">
+                          {sponsorLogoFileName || 'Choose a logo or flyer image'}
+                        </span>
+                        <span className="text-[11px] text-neutral-400">
+                          PNG, JPG, or WebP
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <label
+                        htmlFor="sponsor-logo-upload"
+                        className="px-3.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-xs font-bold text-white cursor-pointer transition-colors"
+                      >
+                        Upload Image
+                      </label>
+                      <input
+                        id="sponsor-logo-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleSponsorFileChange}
+                        className="hidden"
+                      />
+                      {sponsorLogoDataUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSponsorLogoDataUrl('');
+                            setSponsorLogoFileName('');
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/60 text-xs text-red-200 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {sponsorLogoDataUrl && (
+                    <div className="p-3 rounded-xl bg-[#070C09] border border-white/10 inline-flex items-center gap-3">
+                      <img
+                        src={sponsorLogoDataUrl}
+                        alt="Uploaded Sponsor Logo Preview"
+                        className="h-16 w-auto object-contain rounded bg-black/40 p-1.5 border border-white/10"
+                      />
+                      <span className="text-xs text-neutral-300 font-mono-tabular">
+                        Preview ready
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {sponsorStatus && (
+                  <div
+                    className={`p-3.5 rounded-xl text-xs font-medium border ${
+                      sponsorStatus.type === 'success'
+                        ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+                        : 'bg-red-950/60 border-red-500/40 text-red-200'
+                    }`}
+                  >
+                    {sponsorStatus.message}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={sponsorSubmitting}
+                  className="w-full py-3 rounded-xl bg-[#EAB308] hover:bg-[#FACC15] disabled:opacity-50 text-[#070C09] font-extrabold text-sm uppercase tracking-wider transition-colors"
+                >
+                  {sponsorSubmitting ? 'Submitting Sponsor Info...' : 'Submit Sponsor Application'}
+                </button>
+              </form>
+            </section>
           </div>
         )}
 

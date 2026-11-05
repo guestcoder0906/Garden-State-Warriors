@@ -51,6 +51,37 @@ export default async function handler(req: any, res: any) {
   const spreadsheetId =
     process.env.VITE_GOOGLE_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID;
 
+  // Handle POST (Become a Sponsor direct website form submission -> Google Apps Script doPost)
+  if (req.method === 'POST') {
+    if (
+      appsScriptUrl &&
+      appsScriptUrl.startsWith('https://script.google.com/') &&
+      !appsScriptUrl.includes('YOUR_')
+    ) {
+      try {
+        const bodyStr =
+          typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+        const postRes = await fetch(appsScriptUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8',
+          },
+          body: bodyStr,
+        });
+        if (postRes.ok) {
+          const data = await postRes.json().catch(() => ({ ok: true }));
+          return res.status(200).json({ ok: true, ...data });
+        }
+      } catch (err: any) {
+        return res.status(500).json({ ok: false, error: err?.message || 'Post failed' });
+      }
+    }
+    return res.status(400).json({
+      ok: false,
+      error: 'VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL is not configured.',
+    });
+  }
+
   try {
     // 1. Try Google Apps Script Web App URL if configured
     if (
