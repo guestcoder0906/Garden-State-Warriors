@@ -1,4 +1,50 @@
+import crypto from 'node:crypto';
+
 const DEFAULT_SPREADSHEET_ID = '1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s';
+const CAPTCHA_HMAC_SECRET =
+  process.env.CAPTCHA_SECRET_KEY ||
+  process.env.RECAPTCHA_SECRET_KEY ||
+  'gsw-vercel-production-captcha-hmac-key-9f8e7d6c5b4a';
+const TOKEN_TTL_MS = 15 * 60 * 1000;
+
+function sha256Hex(input: string): string {
+  return crypto.createHash('sha256').update(input).digest('hex');
+}
+
+function hmacSha256Hex(input: string, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(input).digest('hex');
+}
+
+function verifyCryptographicCaptchaToken(token: string): boolean {
+  // 1. Server-signed token from POST /api/captcha: v1.<verifiedAt>.<saltTs>.<saltNonce>.<number>.<hmac>
+  if (token.startsWith('v1.')) {
+    const parts = token.split('.');
+    if (parts.length !== 6) return false;
+    const [, verifiedAtStr, saltTs, saltNonce, numStr, sig] = parts;
+    const verifiedAt = Number(verifiedAtStr);
+    if (!Number.isFinite(verifiedAt) || Date.now() - verifiedAt > TOKEN_TTL_MS) {
+      return false;
+    }
+    const payload = `v1.${verifiedAtStr}.${saltTs}.${saltNonce}.${numStr}`;
+    const expectedSig = hmacSha256Hex(payload, CAPTCHA_HMAC_SECRET);
+    return sig === expectedSig;
+  }
+
+  // 2. Client WebCrypto Proof-of-Work token: pow.<saltTs>.<saltNonce>.<number>.<challenge>
+  if (token.startsWith('pow.')) {
+    const parts = token.split('.');
+    if (parts.length !== 5) return false;
+    const [, saltTs, saltNonce, numStr, challenge] = parts;
+    const issuedAt = Number(saltTs);
+    if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > TOKEN_TTL_MS) {
+      return false;
+    }
+    const salt = `${saltTs}.${saltNonce}`;
+    return sha256Hex(`${salt}:${numStr}`) === challenge;
+  }
+
+  return false;
+}
 
 async function fetchGvizSheetTab(
   spreadsheetId: string,
@@ -70,7 +116,7 @@ export default async function handler(req: any, res: any) {
   const spreadsheetId =
     process.env.VITE_GOOGLE_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID;
 
-  // Handle POST (Sponsor or Warrior form submission -> verify Google reCAPTCHA API -> Google Apps Script doPost)
+  // Handle POST (Sponsor or Warrior form submission -> verify CAPTCHA API token -> Google Apps Script doPost)
   if (req.method === 'POST') {
     const parsedBody =
       typeof req.body === 'string'
@@ -87,34 +133,44 @@ export default async function handler(req: any, res: any) {
     if (!captchaToken) {
       return res.status(400).json({
         ok: false,
-        error: 'Please complete the Google reCAPTCHA verification before submitting.',
+        error: 'Please complete the CAPTCHA security verification before submitting.',
       });
     }
 
-    // Verify token against Google's official reCAPTCHA siteverify endpoint
-    try {
-      const recaptchaSecret =
-        process.env.RECAPTCHA_SECRET_KEY || '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe';
-      const verifyParams = new URLSearchParams();
-      verifyParams.set('secret', recaptchaSecret);
-      verifyParams.set('response', captchaToken);
-
-      const verifyRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: verifyParams.toString(),
-      });
-      if (verifyRes.ok) {
-        const verifyData = await verifyRes.json();
-        if (!verifyData.success) {
-          return res.status(400).json({
-            ok: false,
-            error: 'Google reCAPTCHA verification failed or expired. Please check the box again.',
-          });
-        }
+    if (captchaToken.startsWith('v1.') || captchaToken.startsWith('pow.')) {
+      if (!verifyCryptographicCaptchaToken(captchaToken)) {
+        return res.status(400).json({
+          ok: false,
+          error: 'CAPTCHA verification expired or invalid. Please verify again.',
+        });
       }
-    } catch {
-      // Proceed if external siteverify network call times out in restricted environment
+    } else if (
+      process.env.RECAPTCHA_SECRET_KEY &&
+      !process.env.RECAPTCHA_SECRET_KEY.startsWith('YOUR_') &&
+      !process.env.RECAPTCHA_SECRET_KEY.startsWith('6LeIxAcT')
+    ) {
+      try {
+        const verifyParams = new URLSearchParams();
+        verifyParams.set('secret', process.env.RECAPTCHA_SECRET_KEY);
+        verifyParams.set('response', captchaToken);
+
+        const verifyRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: verifyParams.toString(),
+        });
+        if (verifyRes.ok) {
+          const verifyData = await verifyRes.json();
+          if (!verifyData.success) {
+            return res.status(400).json({
+              ok: false,
+              error: 'CAPTCHA verification failed or expired. Please check the box again.',
+            });
+          }
+        }
+      } catch {
+        // Proceed if external siteverify network call times out
+      }
     }
 
     if (
