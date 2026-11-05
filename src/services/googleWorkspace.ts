@@ -22,13 +22,14 @@ export interface DynamicSyncResult {
   detectedTabs: string[];
 }
 
-const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v6';
+const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v7';
 const LEGACY_CACHE_KEYS = [
   'gsw_verified_sheet_cache_v1',
   'gsw_verified_sheet_cache_v2',
   'gsw_verified_sheet_cache_v3',
   'gsw_verified_sheet_cache_v4',
   'gsw_verified_sheet_cache_v5',
+  'gsw_verified_sheet_cache_v6',
 ];
 let inMemoryCache: DynamicSyncResult | null = null;
 let inFlightSyncPromise: Promise<DynamicSyncResult | null> | null = null;
@@ -535,6 +536,8 @@ function mergeDynamicSyncResults(
       ...gp,
       jerseyPhotoUrl: gp.jerseyPhotoUrl || ap.jerseyPhotoUrl,
       militaryPhotoUrl: gp.militaryPhotoUrl || ap.militaryPhotoUrl,
+      preferredContact: gp.preferredContact || ap.preferredContact,
+      questionsInfo: gp.questionsInfo || ap.questionsInfo,
       mediaGallery: gp.mediaGallery.length > 0 ? gp.mediaGallery : ap.mediaGallery,
     };
   });

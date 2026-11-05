@@ -32,13 +32,15 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   const showPositionOrRankBox =
     hasVal(player.position) || hasVal(player.rank) || hasVal(player.tierTab);
   const showEraOrHometownBox = hasVal(player.yearsOfService) || hasVal(player.hometown);
+  const showPreferredContact = hasVal(player.preferredContact);
 
   const showAnySpecBox =
     showJerseyOrPosBox ||
     showNameBox ||
     showBranchBox ||
     showPositionOrRankBox ||
-    showEraOrHometownBox;
+    showEraOrHometownBox ||
+    showPreferredContact;
 
   const showJerseyPhoto = hasVal(player.jerseyPhotoUrl);
   const showMilitaryPhoto = hasVal(player.militaryPhotoUrl);
@@ -46,7 +48,8 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
 
   const showBio = hasVal(player.bio);
   const showMeaning = hasVal(player.whatWarriorsMeans);
-  const showBioOrMeaning = showBio || showMeaning;
+  const showQuestionsInfo = hasVal(player.questionsInfo);
+  const showBioOrMeaning = showBio || showMeaning || showQuestionsInfo;
 
   const validMedia = (player.mediaGallery || []).filter((m) => hasVal(m.url));
   const showMediaSection = validMedia.length > 0;
@@ -190,6 +193,17 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     </div>
                   </div>
                 )}
+
+                {showPreferredContact && (
+                  <div className="bg-[#142019] border border-white/10 rounded-xl px-4 py-2.5 flex items-center">
+                    <div>
+                      <span className="text-[11px] text-neutral-400 block">Preferred Contact</span>
+                      <span className="text-sm font-semibold text-white font-mono-tabular">
+                        {player.preferredContact}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -250,7 +264,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             </div>
           )}
 
-          {/* Player Bio & What the Warriors Means to Them (Only rendered when non-empty) */}
+          {/* Player Bio, What the Warriors Means to Them & Additional Questions/Info (Only rendered when non-empty) */}
           {showBioOrMeaning && (
             <div className="space-y-5 bg-[#101914] border border-white/10 rounded-xl p-5">
               {showBio && (
@@ -270,6 +284,15 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   <q className="text-sm text-neutral-200 leading-relaxed italic">
                     {player.whatWarriorsMeans}
                   </q>
+                </div>
+              )}
+
+              {showQuestionsInfo && (
+                <div className={showBio || showMeaning ? 'border-t border-white/10 pt-4' : ''}>
+                  <h3 className="text-sm font-bold text-[#EAB308] font-display uppercase tracking-wider mb-1.5">
+                    Additional Questions / Info
+                  </h3>
+                  <p className="text-sm text-neutral-200 leading-relaxed">{player.questionsInfo}</p>
                 </div>
               )}
             </div>

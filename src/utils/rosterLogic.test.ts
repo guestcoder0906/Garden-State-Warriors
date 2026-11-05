@@ -43,6 +43,26 @@ test('extractSpreadsheetId extracts exact user spreadsheet ID', () => {
 });
 
 test('parseSheetRowsToPlayers matches exact spaced headers from Garden_State_Warriors_Roster and WhatWarriorMeans', () => {
+  assert.deepEqual(EXACT_SHEET_HEADERS, [
+    'Last Name',
+    'First Name',
+    'Jersey Number',
+    'Position',
+    'RosterTab',
+    'Military Branch',
+    'Military Rank',
+    'Service Era',
+    'Hometown',
+    'Role Badge',
+    'JerseyPhotoUrl',
+    'MilitaryPhotoUrl',
+    'Bio',
+    'WhatWarriorMeans',
+    'MediaUrlsCsv',
+    'PreferredContact',
+    'QuestionsInfo',
+  ]);
+
   const rows = [
     [...EXACT_SHEET_HEADERS],
     [
@@ -61,15 +81,19 @@ test('parseSheetRowsToPlayers matches exact spaced headers from Garden_State_War
       'Verified bio from sheet.',
       'Verified WhatWarriorMeans testimony.',
       'https://example.com/media1.jpg',
+      'Text, Email',
+      'Available for all tournaments.',
     ],
     // Partial row with only First Name filled
-    ['', 'Alex', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['', 'Alex', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
   ];
 
   const players = parseSheetRowsToPlayers(rows, 'Sheet1');
   assert.equal(players.length, 2);
   assert.equal(players[0].name, 'James Miller');
   assert.equal(players[0].whatWarriorsMeans, 'Verified WhatWarriorMeans testimony.');
+  assert.equal(players[0].preferredContact, 'Text, Email');
+  assert.equal(players[0].questionsInfo, 'Available for all tournaments.');
   assert.equal(players[0].roleBadge, 'Captain');
   assert.equal(players[1].name, 'Alex');
 });
@@ -91,8 +115,8 @@ test('parseAppsScriptPayload returns empty arrays when sheet only has header row
 test('filterPlayers filters by tierTab, rankFilter, and searchQuery', () => {
   const rows = [
     [...EXACT_SHEET_HEADERS],
-    ['One', 'Player', '21', 'F', 'Alpha', 'U.S. Army', 'CPT', '', '', '', '', '', '', '', ''],
-    ['Two', 'Player', '82', 'D', 'Bravo', 'U.S. Navy', 'PO1', '', '', '', '', '', '', '', ''],
+    ['One', 'Player', '21', 'F', 'Alpha', 'U.S. Army', 'CPT', '', '', '', '', '', '', '', '', '', ''],
+    ['Two', 'Player', '82', 'D', 'Bravo', 'U.S. Navy', 'PO1', '', '', '', '', '', '', '', '', '', ''],
   ];
   const players = parseSheetRowsToPlayers(rows);
   assert.equal(filterPlayers(players, { rankFilter: 'PO1' }).length, 1);
@@ -121,8 +145,8 @@ test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verif
     sheets: {
       'Garden State Warriors Roster': [
         [...EXACT_SHEET_HEADERS],
-        ['Miller', 'James', '21', 'F', 'Alpha', 'U.S. Army', 'CPT', '2012-2020', 'Morristown, NJ', 'Captain', '', '', 'Existing roster player.', '', ''],
-        // Row written by Apps Script into the last available row of Garden State Warriors Roster (with Jersey Number, Position, RosterTab, JerseyPhotoUrl still blank)
+        ['Miller', 'James', '21', 'F', 'Alpha', 'U.S. Army', 'CPT', '2012-2020', 'Morristown, NJ', 'Captain', '', '', 'Existing roster player.', '', '', 'Email', ''],
+        // Row written by Apps Script into the last available row of Garden State Warriors Roster
         [
           'Rivera',
           'Carlos',
@@ -139,6 +163,8 @@ test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verif
           'Served 8 years aboard USS New Jersey.',
           'Brotherhood on and off the ice.',
           'https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_m1, https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_m2',
+          'Text, Call',
+          'Needs right-handed sticks.',
         ],
       ],
       'Become Warrior': [
@@ -173,6 +199,8 @@ test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verif
           'Leftover duplicate Roster tab player should be ignored',
           'Quote',
           '',
+          '',
+          '',
         ],
       ],
     },
@@ -190,6 +218,8 @@ test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verif
   assert.equal(carlos.jerseyPhotoUrl, undefined);
   assert.equal(carlos.branch, 'U.S. Navy');
   assert.equal(carlos.rank, 'PO1');
+  assert.equal(carlos.preferredContact, 'Text, Call');
+  assert.equal(carlos.questionsInfo, 'Needs right-handed sticks.');
   assert.equal(carlos.militaryPhotoUrl, '/api/firebase-image?id=wr_carlos_mil');
   assert.equal(carlos.mediaGallery.length, 2);
 });

@@ -16,6 +16,8 @@ export const EXACT_SHEET_HEADERS = [
   'Bio',
   'WhatWarriorMeans',
   'MediaUrlsCsv',
+  'PreferredContact',
+  'QuestionsInfo',
 ] as const;
 
 export interface PlayerMediaItem {
@@ -42,6 +44,8 @@ export interface PlayerProfile {
   shortCaption: string;
   bio: string;
   whatWarriorsMeans: string;
+  preferredContact?: string;
+  questionsInfo?: string;
   isTestimonyFeatured?: boolean;
   jerseyPhotoUrl?: string;
   militaryPhotoUrl?: string;
@@ -257,6 +261,14 @@ export function parseSheetRowsToPlayers(
     ['warriormeans', 'warriorsmeans', 'meaning', 'testimony', 'quote']
   );
   const idxMedia = findCol(['mediaurlscsv', 'mediaurls', 'media'], ['media', 'gallery']);
+  const idxPreferredContact = findCol(
+    ['preferredcontact', 'preferredmethodofcontact', 'contactmethod'],
+    ['preferredcontact', 'contactmethod']
+  );
+  const idxQuestionsInfo = findCol(
+    ['questionsinfo', 'additionalquestionsinfo', 'questions', 'additionalinfo'],
+    ['questionsinfo', 'additionalquestions']
+  );
 
   const isGenericSheetName = (name: string) =>
     !name ||
@@ -320,6 +332,8 @@ export function parseSheetRowsToPlayers(
     const jerseyPhotoUrl = normalizeSheetImageUrl(getCell(idxJerseyPhoto)) || undefined;
     const militaryPhotoUrl = normalizeSheetImageUrl(getCell(idxMilitaryPhoto)) || undefined;
     const rawMedia = getCell(idxMedia);
+    const preferredContact = getCell(idxPreferredContact) || undefined;
+    const questionsInfo = getCell(idxQuestionsInfo) || undefined;
 
     let tierTab = rawTier;
     if (/^captain/i.test(rawTier)) {
@@ -382,6 +396,8 @@ export function parseSheetRowsToPlayers(
       shortCaption,
       bio,
       whatWarriorsMeans,
+      preferredContact,
+      questionsInfo,
       isTestimonyFeatured: Boolean(rawMeaning),
       jerseyPhotoUrl,
       militaryPhotoUrl,
@@ -850,6 +866,8 @@ export function parseAppsScriptPayload(payload: {
               militaryPhotoUrl: pl.militaryPhotoUrl || ex.militaryPhotoUrl,
               bio: pl.bio || ex.bio,
               whatWarriorsMeans: pl.whatWarriorsMeans || ex.whatWarriorsMeans,
+              preferredContact: pl.preferredContact || ex.preferredContact,
+              questionsInfo: pl.questionsInfo || ex.questionsInfo,
               mediaGallery: pl.mediaGallery.length > 0 ? pl.mediaGallery : ex.mediaGallery,
             };
           }
@@ -909,6 +927,8 @@ export function parseAppsScriptPayload(payload: {
       const hometown = rawHometown;
       const bio = cleanSheetCell(p.bio);
       const whatWarriorsMeans = cleanSheetCell(p.whatWarriorMeans || p.whatWarriorsMeans);
+      const preferredContact = cleanSheetCell(p.preferredContact) || undefined;
+      const questionsInfo = cleanSheetCell(p.questionsInfo) || undefined;
       const jerseyPhotoUrl = normalizeSheetImageUrl(p.jerseyPhotoUrl) || undefined;
       const militaryPhotoUrl = normalizeSheetImageUrl(p.militaryPhotoUrl) || undefined;
       const rawRoleBadge = cleanSheetCell(p.roleBadge);
@@ -938,6 +958,8 @@ export function parseAppsScriptPayload(payload: {
           .join(' · '),
         bio,
         whatWarriorsMeans,
+        preferredContact,
+        questionsInfo,
         isTestimonyFeatured: Boolean(whatWarriorsMeans),
         jerseyPhotoUrl,
         militaryPhotoUrl,
