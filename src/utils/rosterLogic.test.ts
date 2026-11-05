@@ -161,11 +161,33 @@ test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verif
           '/api/firebase-image?id=wr_media1',
         ],
       ],
+      Roster: [
+        [...EXACT_SHEET_HEADERS],
+        [
+          'Doe',
+          'John',
+          '',
+          '',
+          'U.S. Army',
+          'SGT',
+          '2012-2016',
+          'Newark, NJ',
+          '',
+          'Veteran',
+          '',
+          '',
+          'Leftover duplicate Roster tab player should be ignored',
+          'Quote',
+          '',
+        ],
+      ],
     },
   };
 
   const parsed = parseAppsScriptPayload(payload);
   assert.equal(parsed.players.length, 2);
+  const johnDoe = parsed.players.find((p) => p.name === 'John Doe');
+  assert.equal(johnDoe, undefined, 'Leftover duplicate Roster tab should be ignored when Garden State Warriors Roster tab exists');
   const carlos = parsed.players.find((p) => p.name === 'Carlos Rivera');
   assert.ok(carlos, 'Player row in Garden State Warriors Roster tab should be parsed');
   assert.equal(carlos.jerseyNumber, '');

@@ -801,6 +801,9 @@ export function parseAppsScriptPayload(payload: {
   const hasDedicatedSponsorsSheet = tabNames.some((t) =>
     /^(sponsors|sponsor|partners)$/i.test(t.trim())
   );
+  const hasGardenStateWarriorsRosterSheet = tabNames.some((t) =>
+    /^garden state warriors roster$/i.test(t.trim())
+  );
 
   // 1. Parse raw 2D tab arrays if present in `payload.sheets`
   for (const tabName of tabNames) {
@@ -819,6 +822,9 @@ export function parseAppsScriptPayload(payload: {
       allSponsors.push(...parseSheetRowsToSponsors(rows));
     } else if (/^(become warrior|become a warrior|becomewarrior|warrior applications)$/i.test(tabName.trim())) {
       // Verified applications are copied by Apps Script into the last available row of the Garden State Warriors Roster tab
+      continue;
+    } else if (hasGardenStateWarriorsRosterSheet && /^roster$/i.test(tabName.trim())) {
+      // Ignore accidental duplicate 'Roster' tab when the main 'Garden State Warriors Roster' tab exists
       continue;
     } else {
       const parsedPlayers = parseSheetRowsToPlayers(rows, tabName);
