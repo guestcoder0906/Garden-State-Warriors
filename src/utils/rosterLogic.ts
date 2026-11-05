@@ -58,8 +58,13 @@ export interface StaffMember {
   category: 'Board' | 'Coach';
   branchOrBackground?: string;
   rank?: string;
+  serviceEra?: string;
+  hometown?: string;
+  whatWarriorMeans?: string;
   caption: string;
   photoUrl?: string;
+  militaryPhotoUrl?: string;
+  mediaGallery?: PlayerMediaItem[];
   photoPlaceholder: string;
   isPlaceholder?: boolean;
 }
@@ -68,6 +73,7 @@ export interface FanItem {
   id: string;
   title: string;
   category: 'Family' | 'Friends' | 'Pets';
+  roleLabel?: string;
   relatedPlayer?: string;
   caption: string;
   photoUrl?: string;
@@ -249,13 +255,12 @@ export function parseSheetRowsToPlayers(
     const getCell = (idx: number) =>
       idx >= 0 && row[idx] !== undefined ? cleanSheetCell(row[idx]) : '';
 
-    // Skip rows that are explicitly marked as Board, Coach, or Events in RosterTab or Role Badge
+    // Skip rows that are explicitly marked as Board, Coach, Events, Fans, or Sponsors in RosterTab
     const rawRosterTab = getCell(idxRosterTab);
     const rawRoleBadge = getCell(idxRole);
     if (
-      /^(board|staff|coach|coaches|event|events|schedule)$/i.test(rawRosterTab) ||
-      /^(president|vice president|secretary|treasurer|head coach|associate coach)$/i.test(
-        rawRoleBadge
+      /^(board|staff|coach|coaches|event|events|schedule|fan|fans|sponsor|sponsors)$/i.test(
+        rawRosterTab
       )
     ) {
       continue;
@@ -376,17 +381,26 @@ export function parseSheetRowsToStaff(
 ): StaffMember[] {
   if (!rows || rows.length < 2) return [];
   const normHeaders = rows[0].map(normalizeHeaderKey);
-  const findCol = (keys: string[]) => normHeaders.findIndex((h) => keys.some((k) => h.includes(k)));
+  const findCol = (keys: string[]) => {
+    const exactIdx = normHeaders.findIndex((h) => keys.includes(h));
+    if (exactIdx >= 0) return exactIdx;
+    return normHeaders.findIndex((h) => keys.some((k) => h.includes(k)));
+  };
 
-  const idxLast = findCol(['lastname']);
-  const idxFirst = findCol(['firstname']);
-  const idxName = findCol(['name', 'officer', 'coach', 'member']);
-  const idxRole = findCol(['rolebadge', 'role', 'title', 'position', 'office']);
+  const idxLast = findCol(['lastname', 'last']);
+  const idxFirst = findCol(['firstname', 'first']);
+  const idxName = findCol(['name', 'fullname', 'officer', 'coach', 'member']);
+  const idxRole = findCol(['role', 'rolebadge', 'title', 'position', 'office']);
   const idxRosterTab = findCol(['rostertab', 'category', 'type', 'group']);
-  const idxBranch = findCol(['militarybranch', 'branch', 'background']);
+  const idxBranch = findCol(['militarybranch', 'branch', 'servicebranch', 'background']);
   const idxRank = findCol(['militaryrank', 'rank']);
-  const idxCaption = findCol(['bio', 'caption', 'description', 'whatwarriormeans']);
-  const idxPhoto = findCol(['jerseyphotourl', 'photourl', 'photo', 'image', 'headshot']);
+  const idxEra = findCol(['serviceera', 'era', 'yearsofservice']);
+  const idxHometown = findCol(['hometown', 'city', 'town']);
+  const idxCaption = findCol(['caption', 'bio', 'description']);
+  const idxMeaning = findCol(['whatwarriormeans', 'whatwarriorsmeans', 'testimony']);
+  const idxPhoto = findCol(['photourl', 'jerseyphotourl', 'photo', 'imageurl', 'image', 'headshot']);
+  const idxMilitaryPhoto = findCol(['militaryphotourl', 'militaryphoto', 'servicephoto']);
+  const idxMedia = findCol(['mediaurlscsv', 'mediaurls', 'media']);
 
   const staffList: StaffMember[] = [];
   for (let i = 1; i < rows.length; i++) {
@@ -401,11 +415,13 @@ export function parseSheetRowsToStaff(
     const isBoardRow =
       defaultCategory === 'Board' ||
       /^(board|staff|officer|officers)$/i.test(rawTab) ||
-      /^(president|vice president|secretary|treasurer)$/i.test(rawRole);
+      (defaultCategory === 'Auto' &&
+        !rawTab &&
+        /^(president|vice president|secretary|treasurer)$/i.test(rawRole));
     const isCoachRow =
       defaultCategory === 'Coach' ||
       /^(coach|coaches|coaching)$/i.test(rawTab) ||
-      /coach/i.test(rawRole);
+      (defaultCategory === 'Auto' && !rawTab && /coach/i.test(rawRole));
 
     if (defaultCategory === 'Auto' && !isBoardRow && !isCoachRow) {
       continue;
@@ -421,18 +437,48 @@ export function parseSheetRowsToStaff(
 
     const branchOrBackground = getCell(idxBranch);
     const rank = getCell(idxRank);
+    const serviceEra = getCell(idxEra);
+    const hometown = getCell(idxHometown);
     const caption = getCell(idxCaption);
+    const whatWarriorMeans = getCell(idxMeaning);
     const photoUrl = normalizeSheetImageUrl(getCell(idxPhoto)) || undefined;
+    const militaryPhotoUrl = normalizeSheetImageUrl(getCell(idxMilitaryPhoto)) || undefined;
+    const mediaUrls = splitMediaUrlsCell(getCell(idxMedia));
+    const mediaGallery: PlayerMediaItem[] = mediaUrls.map((url, idx) => ({
+      id: `staff-media-${i}-${idx}`,
+      type: /\.(mp4|webm|mov)$/i.test(url) ? 'video' : 'image',
+      url,
+      caption: name ? `${name} — Media #${idx + 1}` : `Media #${idx + 1}`,
+    }));
+
+    if (
+      !name &&
+      !role &&
+      !caption &&
+      !photoUrl &&
+      !militaryPhotoUrl &&
+      !branchOrBackground &&
+      !whatWarriorMeans
+    ) {
+      continue;
+    }
 
     staffList.push({
-      id: `sheet-staff-${i}-${(role || name || `row-${i}`).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      id: `sheet-staff-${category.toLowerCase()}-${i}-${(role || name || `row-${i}`)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')}`,
       name,
       role,
       category,
       branchOrBackground: branchOrBackground || undefined,
       rank: rank || undefined,
+      serviceEra: serviceEra || undefined,
+      hometown: hometown || undefined,
+      whatWarriorMeans: whatWarriorMeans || undefined,
       caption,
       photoUrl,
+      militaryPhotoUrl,
+      mediaGallery: mediaGallery.length > 0 ? mediaGallery : undefined,
       photoPlaceholder: '',
       isPlaceholder: false,
     });
@@ -451,17 +497,21 @@ export function parseSheetRowsToEvents(
 ): ClubEvent[] {
   if (!rows || rows.length < 2) return [];
   const normHeaders = rows[0].map(normalizeHeaderKey);
-  const findCol = (keys: string[]) => normHeaders.findIndex((h) => keys.some((k) => h.includes(k)));
+  const findCol = (keys: string[]) => {
+    const exactIdx = normHeaders.findIndex((h) => keys.includes(h));
+    if (exactIdx >= 0) return exactIdx;
+    return normHeaders.findIndex((h) => keys.some((k) => h.includes(k)));
+  };
 
   const idxRosterTab = findCol(['rostertab', 'tab']);
-  const idxTitle = findCol(['title', 'event', 'name', 'firstname', 'lastname']);
-  const idxDate = findCol(['date', 'day', 'serviceera']);
-  const idxTime = findCol(['time', 'militaryrank']);
-  const idxLoc = findCol(['location', 'venue', 'rink', 'place', 'hometown']);
-  const idxCategory = findCol(['category', 'type', 'rolebadge', 'position']);
-  const idxDesc = findCol(['description', 'details', 'bio', 'info', 'whatwarriormeans']);
-  const idxImg = findCol(['flyerurl', 'imageurl', 'photourl', 'image', 'photo', 'banner', 'jerseyphotourl']);
-  const idxUrl = findCol(['externalurl', 'url', 'link', 'mediaurlscsv']);
+  const idxTitle = findCol(['title', 'event', 'eventname', 'name']);
+  const idxDate = findCol(['date', 'eventdate', 'day']);
+  const idxTime = findCol(['time', 'eventtime']);
+  const idxLoc = findCol(['location', 'venue', 'rink', 'place']);
+  const idxCategory = findCol(['category', 'type']);
+  const idxDesc = findCol(['description', 'details', 'bio', 'info']);
+  const idxImg = findCol(['flyerurl', 'imageurl', 'photourl', 'flyer', 'image', 'photo', 'banner']);
+  const idxUrl = findCol(['externalurl', 'url', 'link']);
 
   const events: ClubEvent[] = [];
   for (let i = 1; i < rows.length; i++) {
@@ -484,6 +534,8 @@ export function parseSheetRowsToEvents(
     const imageUrl = normalizeSheetImageUrl(getCell(idxImg)) || undefined;
     const externalUrl = getCell(idxUrl) || undefined;
 
+    if (!title && !date && !time && !location && !category && !description && !imageUrl) continue;
+
     events.push({
       id: `sheet-event-${mode}-${i}`,
       title,
@@ -503,16 +555,19 @@ export function parseSheetRowsToEvents(
 
 /**
  * Parses an optional "Fans" tab from the Google Sheet.
- * Dedicated Fans Tab Columns (all optional):
- * Title, Category, RelatedPlayer, Caption, PhotoUrl
+ * Dedicated Fans Tab Columns (supports both `Role,Name,Caption,PhotoUrl` and `Title,Category,RelatedPlayer,Caption,PhotoUrl`):
  */
 export function parseSheetRowsToFans(rows: string[][]): FanItem[] {
   if (!rows || rows.length < 2) return [];
   const normHeaders = rows[0].map(normalizeHeaderKey);
-  const findCol = (keys: string[]) => normHeaders.findIndex((h) => keys.some((k) => h.includes(k)));
+  const findCol = (keys: string[]) => {
+    const exactIdx = normHeaders.findIndex((h) => keys.includes(h));
+    if (exactIdx >= 0) return exactIdx;
+    return normHeaders.findIndex((h) => keys.some((k) => h.includes(k)));
+  };
 
-  const idxTitle = findCol(['title', 'name', 'fan']);
-  const idxCategory = findCol(['category', 'type', 'group']);
+  const idxTitle = findCol(['name', 'title', 'fullname', 'fan']);
+  const idxCategory = findCol(['role', 'category', 'rolebadge', 'type', 'group']);
   const idxPlayer = findCol(['relatedplayer', 'player', 'warrior']);
   const idxCaption = findCol(['caption', 'bio', 'description']);
   const idxPhoto = findCol(['photourl', 'photo', 'imageurl', 'image']);
@@ -526,19 +581,22 @@ export function parseSheetRowsToFans(rows: string[][]): FanItem[] {
 
     const title = getCell(idxTitle);
     const rawCat = getCell(idxCategory);
-    const category: 'Family' | 'Friends' | 'Pets' = /pet|dog|cat/i.test(rawCat)
+    const category: 'Family' | 'Friends' | 'Pets' = /pet|dog|cat|pup|k9/i.test(rawCat)
       ? 'Pets'
-      : /friend/i.test(rawCat)
+      : /friend|supporter|fan/i.test(rawCat)
       ? 'Friends'
       : 'Family';
     const relatedPlayer = getCell(idxPlayer) || undefined;
     const caption = getCell(idxCaption);
     const photoUrl = normalizeSheetImageUrl(getCell(idxPhoto)) || undefined;
 
+    if (!title && !rawCat && !caption && !photoUrl) continue;
+
     fans.push({
       id: `sheet-fan-${i}`,
       title,
       category: rawCat ? category : ('' as any),
+      roleLabel: rawCat || undefined,
       relatedPlayer,
       caption,
       photoUrl,
@@ -603,10 +661,14 @@ export function normalizeWebsiteUrl(input: string): string {
 export function parseSheetRowsToSponsors(rows: string[][]): SponsorItem[] {
   if (!rows || rows.length < 2) return [];
   const normHeaders = rows[0].map(normalizeHeaderKey);
-  const findCol = (keys: string[]) => normHeaders.findIndex((h) => keys.some((k) => h.includes(k)));
+  const findCol = (keys: string[]) => {
+    const exactIdx = normHeaders.findIndex((h) => keys.includes(h));
+    if (exactIdx >= 0) return exactIdx;
+    return normHeaders.findIndex((h) => keys.some((k) => h.includes(k)));
+  };
 
   const idxVerified = findCol(['verified', 'approved', 'active', 'show']);
-  const idxName = findCol(['name', 'sponsor', 'title', 'company']);
+  const idxName = findCol(['name', 'sponsorname', 'sponsor', 'title', 'company', 'organization']);
   const idxTier = findCol(['tier', 'level', 'category', 'type']);
   const idxMsg = findCol(['message', 'quote', 'note', 'comment', 'testimony']);
   const idxDesc = findCol(['description', 'caption', 'bio', 'details']);
@@ -615,8 +677,12 @@ export function parseSheetRowsToSponsors(rows: string[][]): SponsorItem[] {
     'logourl',
     'logo',
     'sponsorlogo',
+    'sponsorlogoflyerimageupload',
+    'sponsorlogoflyer',
+    'flyerurl',
     'flyer',
     'photourl',
+    'photo',
     'imageurl',
     'image',
     'upload',
@@ -695,6 +761,22 @@ export function parseAppsScriptPayload(payload: {
   const allSponsors: SponsorItem[] = [];
   const playerTabsSet = new Set<string>();
 
+  const hasDedicatedBoardSheet = tabNames.some((t) =>
+    /^(board|staff|officers|board and staff)$/i.test(t.trim())
+  );
+  const hasDedicatedCoachesSheet = tabNames.some((t) =>
+    /^(coaches|coach|coaching|coaching staff)$/i.test(t.trim())
+  );
+  const hasDedicatedEventsSheet = tabNames.some((t) =>
+    /^(events|event|schedule|calendar)$/i.test(t.trim())
+  );
+  const hasDedicatedFansSheet = tabNames.some((t) =>
+    /^(fans|fan|fan wall|supporters|family)$/i.test(t.trim())
+  );
+  const hasDedicatedSponsorsSheet = tabNames.some((t) =>
+    /^(sponsors|sponsor|partners)$/i.test(t.trim())
+  );
+
   // 1. Parse raw 2D tab arrays if present in `payload.sheets`
   for (const tabName of tabNames) {
     const rows = sheets[tabName];
@@ -706,7 +788,7 @@ export function parseAppsScriptPayload(payload: {
       allStaff.push(...parseSheetRowsToStaff(rows, 'Coach'));
     } else if (/^(events|event|schedule|calendar)$/i.test(tabName.trim())) {
       allEvents.push(...parseSheetRowsToEvents(rows, 'DedicatedTab'));
-    } else if (/^(fans|fan|supporters|family)$/i.test(tabName.trim())) {
+    } else if (/^(fans|fan|fan wall|supporters|family)$/i.test(tabName.trim())) {
       allFans.push(...parseSheetRowsToFans(rows));
     } else if (/^(sponsors|sponsor|partners)$/i.test(tabName.trim())) {
       allSponsors.push(...parseSheetRowsToSponsors(rows));
@@ -729,7 +811,7 @@ export function parseAppsScriptPayload(payload: {
     }
   }
 
-  // 2. Also support structured arrays (`players`, `board`, `coaches`, `events`, `fans`, `sponsors`) if `sheets` wasn't used
+  // 2. Also support structured arrays (`players`, `board`, `coaches`, `events`, `fans`, `sponsors`)
   if (allPlayers.length === 0 && Array.isArray(payload?.players) && payload.players.length > 0) {
     payload.players.forEach((p: any, i: number) => {
       const firstName = cleanSheetCell(p.firstName);
@@ -739,7 +821,12 @@ export function parseAppsScriptPayload(payload: {
         [firstName, lastName].filter(Boolean).join(' ') ||
         (/^warrior #\d+$/i.test(rawFull) ? '' : rawFull);
       const rawTier = cleanSheetCell(p.rosterTab || p.tierTab);
-      const tierTab = rawTier;
+      let tierTab = rawTier;
+      if (/^captain/i.test(rawTier)) tierTab = 'Captains';
+      else if (/^alpha/i.test(rawTier)) tierTab = 'Alpha';
+      else if (/^bravo/i.test(rawTier)) tierTab = 'Bravo';
+      else if (/^charlie/i.test(rawTier)) tierTab = 'Charlie';
+
       if (tierTab) playerTabsSet.add(tierTab);
 
       const jerseyNumber = cleanSheetCell(p.jerseyNumber);
@@ -806,48 +893,82 @@ export function parseAppsScriptPayload(payload: {
     });
   }
 
-  if (allStaff.length === 0) {
-    if (Array.isArray(payload?.board)) {
-      payload.board.forEach((b: any, i: number) => {
-        const name = cleanSheetCell(b.name);
-        const role = cleanSheetCell(b.role);
-        const caption = cleanSheetCell(b.caption);
-        const photoUrl = normalizeSheetImageUrl(b.photoUrl) || undefined;
-        if (!name && !role && !caption && !photoUrl) return;
-        allStaff.push({
-          id: b.id || `as-board-${i}`,
-          name,
-          role,
-          category: 'Board',
-          caption,
-          photoUrl,
-          photoPlaceholder: '',
-          isPlaceholder: false,
-        });
+  if (!hasDedicatedBoardSheet && Array.isArray(payload?.board)) {
+    payload.board.forEach((b: any, i: number) => {
+      const name = cleanSheetCell(b.name);
+      const role = cleanSheetCell(b.role);
+      const caption = cleanSheetCell(b.caption);
+      const photoUrl = normalizeSheetImageUrl(b.photoUrl) || undefined;
+      if (!name && !role && !caption && !photoUrl) return;
+      allStaff.push({
+        id: b.id || `as-board-${i}`,
+        name,
+        role,
+        category: 'Board',
+        caption,
+        photoUrl,
+        photoPlaceholder: '',
+        isPlaceholder: false,
       });
-    }
-    if (Array.isArray(payload?.coaches)) {
-      payload.coaches.forEach((c: any, i: number) => {
-        const name = cleanSheetCell(c.name);
-        const role = cleanSheetCell(c.role);
-        const caption = cleanSheetCell(c.caption);
-        const photoUrl = normalizeSheetImageUrl(c.photoUrl) || undefined;
-        if (!name && !role && !caption && !photoUrl) return;
-        allStaff.push({
-          id: c.id || `as-coach-${i}`,
-          name,
-          role,
-          category: 'Coach',
-          caption,
-          photoUrl,
-          photoPlaceholder: '',
-          isPlaceholder: false,
-        });
-      });
-    }
+    });
   }
 
-  if (allEvents.length === 0 && Array.isArray(payload?.events)) {
+  if (!hasDedicatedCoachesSheet && Array.isArray(payload?.coaches)) {
+    payload.coaches.forEach((c: any, i: number) => {
+      const name = cleanSheetCell(c.name);
+      const role = cleanSheetCell(c.role);
+      const caption = cleanSheetCell(c.caption);
+      const photoUrl = normalizeSheetImageUrl(c.photoUrl) || undefined;
+      const militaryPhotoUrl = normalizeSheetImageUrl(c.militaryPhotoUrl) || undefined;
+      const branchOrBackground = cleanSheetCell(c.branch || c.branchOrBackground) || undefined;
+      const serviceEra = cleanSheetCell(c.serviceEra) || undefined;
+      const hometown = cleanSheetCell(c.hometown) || undefined;
+      const whatWarriorMeans = cleanSheetCell(c.whatWarriorMeans) || undefined;
+      const mediaGallery: PlayerMediaItem[] = Array.isArray(c.mediaGallery)
+        ? c.mediaGallery
+            .map((url: any, idx: number) =>
+              typeof url === 'string'
+                ? {
+                    id: `coach-m-${i}-${idx}`,
+                    type: /\.(mp4|webm|mov)$/i.test(url) ? 'video' : 'image',
+                    url: normalizeSheetImageUrl(url),
+                    caption: name ? `${name} — Media #${idx + 1}` : `Media #${idx + 1}`,
+                  }
+                : url
+            )
+            .filter((m: any) => Boolean(m && m.url))
+        : [];
+      if (
+        !name &&
+        !role &&
+        !caption &&
+        !photoUrl &&
+        !militaryPhotoUrl &&
+        !branchOrBackground &&
+        !whatWarriorMeans
+      ) {
+        return;
+      }
+      allStaff.push({
+        id: c.id || `as-coach-${i}`,
+        name,
+        role,
+        category: 'Coach',
+        branchOrBackground,
+        serviceEra,
+        hometown,
+        whatWarriorMeans,
+        caption,
+        photoUrl,
+        militaryPhotoUrl,
+        mediaGallery: mediaGallery.length > 0 ? mediaGallery : undefined,
+        photoPlaceholder: '',
+        isPlaceholder: false,
+      });
+    });
+  }
+
+  if (!hasDedicatedEventsSheet && Array.isArray(payload?.events)) {
     payload.events.forEach((ev: any, i: number) => {
       const title = cleanSheetCell(ev.title);
       const date = cleanSheetCell(ev.date);
@@ -874,13 +995,13 @@ export function parseAppsScriptPayload(payload: {
     });
   }
 
-  if (allFans.length === 0 && Array.isArray(payload?.fans)) {
+  if (!hasDedicatedFansSheet && Array.isArray(payload?.fans)) {
     payload.fans.forEach((f: any, i: number) => {
       const title = cleanSheetCell(f.title || f.name);
       const rawCat = cleanSheetCell(f.category || f.role);
-      const category: 'Family' | 'Friends' | 'Pets' = /pet|dog|cat/i.test(rawCat)
+      const category: 'Family' | 'Friends' | 'Pets' = /pet|dog|cat|pup|k9/i.test(rawCat)
         ? 'Pets'
-        : /friend/i.test(rawCat)
+        : /friend|supporter|fan/i.test(rawCat)
         ? 'Friends'
         : 'Family';
       const relatedPlayer = cleanSheetCell(f.relatedPlayer) || undefined;
@@ -891,6 +1012,7 @@ export function parseAppsScriptPayload(payload: {
         id: f.id || `as-fan-${i}`,
         title,
         category: rawCat ? category : ('' as any),
+        roleLabel: rawCat || undefined,
         relatedPlayer,
         caption,
         photoUrl,
@@ -899,7 +1021,7 @@ export function parseAppsScriptPayload(payload: {
     });
   }
 
-  if (allSponsors.length === 0 && Array.isArray(payload?.sponsors)) {
+  if (!hasDedicatedSponsorsSheet && Array.isArray(payload?.sponsors)) {
     payload.sponsors.forEach((sp: any, i: number) => {
       if (sp.verified !== undefined && !isSheetCheckmarkTrue(sp.verified)) {
         return;

@@ -12,6 +12,7 @@ import {
   Camera,
   Menu,
   X,
+  Loader2,
 } from 'lucide-react';
 import {
   PlayerProfile,
@@ -39,6 +40,8 @@ import {
   syncVerifiedGoogleSheet,
   submitSponsorToGoogleSheet,
   compressSponsorImageToDataUrl,
+  getCachedSheetSyncResult,
+  DynamicSyncResult,
 } from './services/googleWorkspace';
 import { uploadSponsorImageToFirebase } from './services/firebaseStorage';
 import {
@@ -71,13 +74,15 @@ export default function App() {
   const [autoPlaySlides, setAutoPlaySlides] = useState(true);
 
   // Verified Roster, Staff, Fans, Sponsors & Events State
-  // Starts empty and updates directly from Google Sheets so empty tabs/cells are not rendered while empty
-  const [players, setPlayers] = useState<PlayerProfile[]>([]);
-  const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [fans, setFans] = useState<FanItem[]>([]);
-  const [sponsors, setSponsors] = useState<SponsorItem[]>([]);
-  const [events, setEvents] = useState<ClubEvent[]>([]);
-  const [dynamicTabs, setDynamicTabs] = useState<string[]>([]);
+  // Instantly hydrates from localStorage cache if available (0ms) and updates live from Google Sheets
+  const initialCache = useMemo(() => getCachedSheetSyncResult(), []);
+  const [players, setPlayers] = useState<PlayerProfile[]>(() => initialCache?.players || []);
+  const [staff, setStaff] = useState<StaffMember[]>(() => initialCache?.staff || []);
+  const [fans, setFans] = useState<FanItem[]>(() => initialCache?.fans || []);
+  const [sponsors, setSponsors] = useState<SponsorItem[]>(() => initialCache?.sponsors || []);
+  const [events, setEvents] = useState<ClubEvent[]>(() => initialCache?.events || []);
+  const [dynamicTabs, setDynamicTabs] = useState<string[]>(() => initialCache?.detectedTabs || []);
+  const [isSheetLoading, setIsSheetLoading] = useState<boolean>(() => !initialCache);
 
   // Players Filtering State (Position/Rank tabs, Tier tabs, Search)
   const [selectedTierTab, setSelectedTierTab] = useState<string>('All');
@@ -208,19 +213,31 @@ export default function App() {
     }
   };
 
-  // Dynamic Auto-Sync from Verified Google Sheet (`1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s`) via Apps Script / gviz
+  // Dynamic Auto-Sync from Verified Google Sheet (`1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s`) via Direct gviz + Apps Script
   useEffect(() => {
     let mounted = true;
 
+    const applySheetData = (sheetData: DynamicSyncResult) => {
+      if (!mounted) return;
+      setPlayers(sheetData.players);
+      setStaff(sheetData.staff);
+      setEvents(sheetData.events);
+      setFans(sheetData.fans || []);
+      setSponsors(sheetData.sponsors || []);
+      setDynamicTabs(sheetData.detectedTabs);
+      setIsSheetLoading(false);
+    };
+
     const runSync = async () => {
-      const sheetData = await syncVerifiedGoogleSheet();
-      if (mounted && sheetData) {
-        setPlayers(sheetData.players);
-        setStaff(sheetData.staff);
-        setEvents(sheetData.events);
-        setFans(sheetData.fans || []);
-        setSponsors(sheetData.sponsors || []);
-        setDynamicTabs(sheetData.detectedTabs);
+      const sheetData = await syncVerifiedGoogleSheet((fastData) => {
+        applySheetData(fastData);
+      });
+      if (mounted) {
+        if (sheetData) {
+          applySheetData(sheetData);
+        } else {
+          setIsSheetLoading(false);
+        }
       }
 
       if (isSupabaseConfigured()) {
@@ -922,7 +939,16 @@ export default function App() {
               </div>
             </section>
 
-            {/* AT BOTTOM OF HOME PAGE: THANKS SPONSORS AND SUPPORTERS (Only rendered when Sponsors tab has rows) */}
+            {/* AT BOTTOM OF HOME PAGE: THANKS SPONSORS AND SUPPORTERS (Shows loading spinner while loading; only rendered when Sponsors tab has verified rows) */}
+            {isSheetLoading && sponsors.length === 0 && (
+              <div
+                aria-label="Loading Sponsors"
+                className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 flex items-center justify-center gap-2.5 text-neutral-300"
+              >
+                <Loader2 className="w-5 h-5 text-[#EAB308] animate-spin" />
+                <span className="text-xs font-mono-tabular">Loading verified sponsors...</span>
+              </div>
+            )}
             {sponsors.length > 0 && (
               <section
                 aria-label="Sponsors and Supporters"
@@ -1077,6 +1103,15 @@ export default function App() {
                --------------------------------------------------------------- */}
             {aboutSubTab === 'board-staff' && (
               <div className="space-y-10">
+                {isSheetLoading && boardMembers.length === 0 && coaches.length === 0 && (
+                  <div
+                    aria-label="Loading Board and Staff"
+                    className="bg-[#0D1611] border border-white/10 rounded-2xl p-10 flex items-center justify-center gap-3 text-neutral-300"
+                  >
+                    <Loader2 className="w-6 h-6 text-[#EAB308] animate-spin" />
+                    <span className="text-xs font-mono-tabular">Loading Board and Staff...</span>
+                  </div>
+                )}
                 {boardMembers.length > 0 && (
                   <section className="space-y-5">
                     <div className="text-center max-w-xl mx-auto space-y-1">
@@ -1170,14 +1205,26 @@ export default function App() {
                                 {coach.name}
                               </h3>
                             )}
-                            {(coach.rank || coach.branchOrBackground) && (
+                            {(coach.rank || coach.branchOrBackground || coach.serviceEra) && (
                               <p className="text-[11px] text-neutral-400 font-mono-tabular">
-                                {[coach.rank, coach.branchOrBackground].filter(Boolean).join(' · ')}
+                                {[coach.rank, coach.branchOrBackground, coach.serviceEra]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </p>
+                            )}
+                            {coach.hometown && (
+                              <p className="text-[11px] text-neutral-400 font-mono-tabular">
+                                {coach.hometown}
                               </p>
                             )}
                             {coach.caption && (
                               <p className="text-[11px] text-neutral-300 leading-relaxed pt-1 font-mono-tabular">
                                 {coach.caption}
+                              </p>
+                            )}
+                            {coach.whatWarriorMeans && (
+                              <p className="text-[11px] text-neutral-300 italic leading-relaxed pt-1 font-mono-tabular">
+                                <q>{coach.whatWarriorMeans}</q>
                               </p>
                             )}
                           </div>
@@ -1194,6 +1241,15 @@ export default function App() {
                --------------------------------------------------------------- */}
             {aboutSubTab === 'players' && (
               <div className="space-y-12">
+                {isSheetLoading && players.length === 0 && (
+                  <div
+                    aria-label="Loading Players"
+                    className="bg-[#0D1611] border border-white/10 rounded-2xl p-10 flex items-center justify-center gap-3 text-neutral-300"
+                  >
+                    <Loader2 className="w-6 h-6 text-[#EAB308] animate-spin" />
+                    <span className="text-xs font-mono-tabular">Loading Players & Roster...</span>
+                  </div>
+                )}
                 {/* Part A: Team Captains (Only rendered when Captain rows exist in sheet) */}
                 {fourCaptains.length > 0 && (
                   <section className="space-y-5">
@@ -1508,8 +1564,17 @@ export default function App() {
             )}
 
             {/* ---------------------------------------------------------------
-                ABOUT SUB-TAB 4: FANS (Only renders when Fans tab has rows & non-empty cells)
+                ABOUT SUB-TAB 4: FANS (Shows loading spinner while loading; only renders when Fans tab has rows & non-empty cells)
                --------------------------------------------------------------- */}
+            {aboutSubTab === 'fans' && isSheetLoading && fans.length === 0 && (
+              <div
+                aria-label="Loading Fans"
+                className="bg-[#0D1611] border border-white/10 rounded-2xl p-10 flex items-center justify-center gap-3 text-neutral-300"
+              >
+                <Loader2 className="w-6 h-6 text-[#EAB308] animate-spin" />
+                <span className="text-xs font-mono-tabular">Loading Fans...</span>
+              </div>
+            )}
             {aboutSubTab === 'fans' && fans.length > 0 && (
               <div className="space-y-6">
                 <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1557,9 +1622,9 @@ export default function App() {
                         </div>
                       )}
                       <div className="p-4 space-y-1.5 bg-[#0A110D] flex-1">
-                        {fan.category && (
+                        {(fan.roleLabel || fan.category) && (
                           <div className="text-[11px] text-[#EAB308] font-mono-tabular">
-                            {fan.category}
+                            {fan.roleLabel || fan.category}
                           </div>
                         )}
                         {fan.title && (
@@ -1612,7 +1677,16 @@ export default function App() {
             {/* Live Scrollable Social Media Viewing iFrames (Instagram + Facebook) */}
             {renderLiveSocialViewingGrid()}
 
-            {/* Event Entries (Only rendered when Events tab has rows; only renders non-empty cells) */}
+            {/* Event Entries (Shows loading spinner while loading; only rendered when Events tab has rows) */}
+            {isSheetLoading && events.length === 0 && (
+              <div
+                aria-label="Loading Event Listings"
+                className="max-w-3xl mx-auto bg-[#0D1611] border border-white/10 rounded-2xl p-8 flex items-center justify-center gap-3 text-neutral-300"
+              >
+                <Loader2 className="w-5 h-5 text-[#EAB308] animate-spin" />
+                <span className="text-xs font-mono-tabular">Loading Event Listings...</span>
+              </div>
+            )}
             {events.length > 0 && (
               <div className="max-w-3xl mx-auto space-y-4 pt-4 border-t border-white/10">
                 <h2 className="text-xl sm:text-2xl font-bold text-[#EAB308] font-display uppercase tracking-wide text-center">

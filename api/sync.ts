@@ -8,7 +8,7 @@ async function fetchGvizSheetTab(
     const sheetParam = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : '';
     const gvizUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(
       spreadsheetId
-    )}/gviz/tq?tqx=out:json${sheetParam}&_t=${Date.now()}`;
+    )}/gviz/tq?tqx=out:json&headers=1${sheetParam}&_t=${Date.now()}`;
     const gvizRes = await fetch(gvizUrl, {
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -22,13 +22,32 @@ async function fetchGvizSheetTab(
     const json = JSON.parse(match[1]);
     if (json.status === 'error') return null;
 
-    const cols: string[] = (json.table?.cols || []).map((c: any) => c?.label || '');
+    const cols: string[] = (json.table?.cols || []).map((c: any) => String(c?.label || '').trim());
     const rows: string[][] = (json.table?.rows || []).map((r: any) =>
-      (r?.c || []).map((cell: any) =>
-        cell && cell.v !== null && cell.v !== undefined ? String(cell.f ?? cell.v) : ''
-      )
+      (r?.c || []).map((cell: any) => {
+        if (!cell || (cell.v === null && cell.f === undefined)) return '';
+        if (typeof cell.v === 'boolean') return cell.v ? 'TRUE' : 'FALSE';
+        return String(cell.f ?? cell.v ?? '').trim();
+      })
     );
-    return cols.some(Boolean) ? [cols, ...rows] : rows;
+
+    if (!cols.some(Boolean)) {
+      return rows;
+    }
+
+    if (rows.length > 0 && cols.some((c) => !c)) {
+      const firstRow = rows[0];
+      const looksLikeSplitHeader =
+        cols.every((colLabel, idx) => Boolean(colLabel) || Boolean(firstRow[idx])) &&
+        cols.some((colLabel, idx) => Boolean(colLabel) && !firstRow[idx]);
+
+      if (looksLikeSplitHeader) {
+        const mergedHeaders = cols.map((colLabel, idx) => colLabel || firstRow[idx] || '');
+        return [mergedHeaders, ...rows.slice(1)];
+      }
+    }
+
+    return [cols, ...rows];
   } catch {
     return null;
   }
