@@ -538,6 +538,9 @@ function mergeDynamicSyncResults(
       militaryPhotoUrl: gp.militaryPhotoUrl || ap.militaryPhotoUrl,
       preferredContact: gp.preferredContact || ap.preferredContact,
       questionsInfo: gp.questionsInfo || ap.questionsInfo,
+      experience: gp.experience || ap.experience,
+      phone: gp.phone || ap.phone,
+      email: gp.email || ap.email,
       mediaGallery: gp.mediaGallery.length > 0 ? gp.mediaGallery : ap.mediaGallery,
     };
   });

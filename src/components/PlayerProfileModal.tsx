@@ -33,6 +33,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
     hasVal(player.position) || hasVal(player.rank) || hasVal(player.tierTab);
   const showEraOrHometownBox = hasVal(player.yearsOfService) || hasVal(player.hometown);
   const showPreferredContact = hasVal(player.preferredContact);
+  const showPhone = hasVal(player.phone);
+  const showEmail = hasVal(player.email);
+  const showContactBox = showPreferredContact || showPhone || showEmail;
 
   const showAnySpecBox =
     showJerseyOrPosBox ||
@@ -40,7 +43,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
     showBranchBox ||
     showPositionOrRankBox ||
     showEraOrHometownBox ||
-    showPreferredContact;
+    showContactBox;
 
   const showJerseyPhoto = hasVal(player.jerseyPhotoUrl);
   const showMilitaryPhoto = hasVal(player.militaryPhotoUrl);
@@ -48,8 +51,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
 
   const showBio = hasVal(player.bio);
   const showMeaning = hasVal(player.whatWarriorsMeans);
+  const showExperience = hasVal(player.experience);
   const showQuestionsInfo = hasVal(player.questionsInfo);
-  const showBioOrMeaning = showBio || showMeaning || showQuestionsInfo;
+  const showBioOrMeaning = showBio || showMeaning || showExperience || showQuestionsInfo;
 
   const validMedia = (player.mediaGallery || []).filter((m) => hasVal(m.url));
   const showMediaSection = validMedia.length > 0;
@@ -194,12 +198,18 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   </div>
                 )}
 
-                {showPreferredContact && (
+                {showContactBox && (
                   <div className="bg-[#142019] border border-white/10 rounded-xl px-4 py-2.5 flex items-center">
                     <div>
-                      <span className="text-[11px] text-neutral-400 block">Preferred Contact</span>
+                      <span className="text-[11px] text-neutral-400 block">Contact Information</span>
                       <span className="text-sm font-semibold text-white font-mono-tabular">
-                        {player.preferredContact}
+                        {[
+                          hasVal(player.preferredContact) && `Preferred: ${player.preferredContact}`,
+                          hasVal(player.phone) && player.phone,
+                          hasVal(player.email) && player.email,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                       </span>
                     </div>
                   </div>
@@ -287,8 +297,17 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                 </div>
               )}
 
-              {showQuestionsInfo && (
+              {showExperience && (
                 <div className={showBio || showMeaning ? 'border-t border-white/10 pt-4' : ''}>
+                  <h3 className="text-sm font-bold text-[#EAB308] font-display uppercase tracking-wider mb-1.5">
+                    Hockey Experience
+                  </h3>
+                  <p className="text-sm text-neutral-200 leading-relaxed">{player.experience}</p>
+                </div>
+              )}
+
+              {showQuestionsInfo && (
+                <div className={showBio || showMeaning || showExperience ? 'border-t border-white/10 pt-4' : ''}>
                   <h3 className="text-sm font-bold text-[#EAB308] font-display uppercase tracking-wider mb-1.5">
                     Additional Questions / Info
                   </h3>

@@ -18,6 +18,9 @@ export const EXACT_SHEET_HEADERS = [
   'MediaUrlsCsv',
   'PreferredContact',
   'QuestionsInfo',
+  'Experience',
+  'Phone',
+  'Email',
 ] as const;
 
 export interface PlayerMediaItem {
@@ -46,6 +49,9 @@ export interface PlayerProfile {
   whatWarriorsMeans: string;
   preferredContact?: string;
   questionsInfo?: string;
+  experience?: string;
+  phone?: string;
+  email?: string;
   isTestimonyFeatured?: boolean;
   jerseyPhotoUrl?: string;
   militaryPhotoUrl?: string;
@@ -269,6 +275,18 @@ export function parseSheetRowsToPlayers(
     ['questionsinfo', 'additionalquestionsinfo', 'questions', 'additionalinfo'],
     ['questionsinfo', 'additionalquestions']
   );
+  const idxExperience = findCol(
+    ['experience', 'hockeyexperience'],
+    ['experience', 'hockey']
+  );
+  const idxPhone = findCol(
+    ['phone', 'phonenumber', 'contactphone'],
+    ['phone', 'telephone']
+  );
+  const idxEmail = findCol(
+    ['email', 'emailaddress', 'contactemail'],
+    ['email', 'mail']
+  );
 
   const isGenericSheetName = (name: string) =>
     !name ||
@@ -334,6 +352,9 @@ export function parseSheetRowsToPlayers(
     const rawMedia = getCell(idxMedia);
     const preferredContact = getCell(idxPreferredContact) || undefined;
     const questionsInfo = getCell(idxQuestionsInfo) || undefined;
+    const experience = getCell(idxExperience) || undefined;
+    const phone = getCell(idxPhone) || undefined;
+    const email = getCell(idxEmail) || undefined;
 
     let tierTab = rawTier;
     if (/^captain/i.test(rawTier)) {
@@ -398,6 +419,9 @@ export function parseSheetRowsToPlayers(
       whatWarriorsMeans,
       preferredContact,
       questionsInfo,
+      experience,
+      phone,
+      email,
       isTestimonyFeatured: Boolean(rawMeaning),
       jerseyPhotoUrl,
       militaryPhotoUrl,
@@ -868,6 +892,9 @@ export function parseAppsScriptPayload(payload: {
               whatWarriorsMeans: pl.whatWarriorsMeans || ex.whatWarriorsMeans,
               preferredContact: pl.preferredContact || ex.preferredContact,
               questionsInfo: pl.questionsInfo || ex.questionsInfo,
+              experience: pl.experience || ex.experience,
+              phone: pl.phone || ex.phone,
+              email: pl.email || ex.email,
               mediaGallery: pl.mediaGallery.length > 0 ? pl.mediaGallery : ex.mediaGallery,
             };
           }
@@ -929,6 +956,9 @@ export function parseAppsScriptPayload(payload: {
       const whatWarriorsMeans = cleanSheetCell(p.whatWarriorMeans || p.whatWarriorsMeans);
       const preferredContact = cleanSheetCell(p.preferredContact) || undefined;
       const questionsInfo = cleanSheetCell(p.questionsInfo) || undefined;
+      const experience = cleanSheetCell(p.experience) || undefined;
+      const phone = cleanSheetCell(p.phone) || undefined;
+      const email = cleanSheetCell(p.email) || undefined;
       const jerseyPhotoUrl = normalizeSheetImageUrl(p.jerseyPhotoUrl) || undefined;
       const militaryPhotoUrl = normalizeSheetImageUrl(p.militaryPhotoUrl) || undefined;
       const rawRoleBadge = cleanSheetCell(p.roleBadge);
@@ -960,6 +990,9 @@ export function parseAppsScriptPayload(payload: {
         whatWarriorsMeans,
         preferredContact,
         questionsInfo,
+        experience,
+        phone,
+        email,
         isTestimonyFeatured: Boolean(whatWarriorsMeans),
         jerseyPhotoUrl,
         militaryPhotoUrl,

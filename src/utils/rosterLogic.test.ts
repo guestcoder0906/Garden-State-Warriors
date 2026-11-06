@@ -61,6 +61,9 @@ test('parseSheetRowsToPlayers matches exact spaced headers from Garden_State_War
     'MediaUrlsCsv',
     'PreferredContact',
     'QuestionsInfo',
+    'Experience',
+    'Phone',
+    'Email',
   ]);
 
   const rows = [
@@ -83,9 +86,12 @@ test('parseSheetRowsToPlayers matches exact spaced headers from Garden_State_War
       'https://example.com/media1.jpg',
       'Text, Email',
       'Available for all tournaments.',
+      '10 years travel and college club hockey.',
+      '(973) 555-0100',
+      'jmiller@example.com',
     ],
     // Partial row with only First Name filled
-    ['', 'Alex', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['', 'Alex', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
   ];
 
   const players = parseSheetRowsToPlayers(rows, 'Sheet1');
@@ -94,6 +100,9 @@ test('parseSheetRowsToPlayers matches exact spaced headers from Garden_State_War
   assert.equal(players[0].whatWarriorsMeans, 'Verified WhatWarriorMeans testimony.');
   assert.equal(players[0].preferredContact, 'Text, Email');
   assert.equal(players[0].questionsInfo, 'Available for all tournaments.');
+  assert.equal(players[0].experience, '10 years travel and college club hockey.');
+  assert.equal(players[0].phone, '(973) 555-0100');
+  assert.equal(players[0].email, 'jmiller@example.com');
   assert.equal(players[0].roleBadge, 'Captain');
   assert.equal(players[1].name, 'Alex');
 });
@@ -146,7 +155,7 @@ test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verif
     sheets: {
       'Garden State Warriors Roster': [
         [...EXACT_SHEET_HEADERS],
-        ['Miller', 'James', '21', 'F', 'Alpha', 'U.S. Army', 'CPT', '2012-2020', 'Morristown, NJ', 'Captain', '', '', 'Existing roster player.', '', '', 'Email', ''],
+        ['Miller', 'James', '21', 'F', 'Alpha', 'U.S. Army', 'CPT', '2012-2020', 'Morristown, NJ', 'Captain', '', '', 'Existing roster player.', '', '', 'Email', '', 'College Hockey', '(973) 555-0100', 'jmiller@example.com'],
         // Row written by Apps Script into the last available row of Garden State Warriors Roster
         [
           'Rivera',
@@ -166,6 +175,9 @@ test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verif
           'https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_m1, https://firestore.googleapis.com/v1/projects/gen-lang-client-0103247541/databases/ai-studio-1d56a7c8-3851-4214-ae04-c41254eeb012/documents/sponsor_assets/wr_carlos_m2',
           'Text, Call',
           'Needs right-handed sticks.',
+          'Played 5 years adult league defense.',
+          '(973) 555-0199',
+          'carlos@gardenstatewarriors.org',
         ],
       ],
       'Become Warrior': [
@@ -189,16 +201,19 @@ test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verif
           'John',
           '',
           '',
+          'Alpha',
           'U.S. Army',
           'SGT',
           '2012-2016',
           'Newark, NJ',
-          '',
           'Veteran',
           '',
           '',
           'Leftover duplicate Roster tab player should be ignored',
           'Quote',
+          '',
+          '',
+          '',
           '',
           '',
           '',
@@ -221,6 +236,9 @@ test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verif
   assert.equal(carlos.rank, 'PO1');
   assert.equal(carlos.preferredContact, 'Text, Call');
   assert.equal(carlos.questionsInfo, 'Needs right-handed sticks.');
+  assert.equal(carlos.experience, 'Played 5 years adult league defense.');
+  assert.equal(carlos.phone, '(973) 555-0199');
+  assert.equal(carlos.email, 'carlos@gardenstatewarriors.org');
   assert.equal(carlos.militaryPhotoUrl, '/api/firebase-image?id=wr_carlos_mil');
   assert.equal(carlos.mediaGallery.length, 2);
 });
