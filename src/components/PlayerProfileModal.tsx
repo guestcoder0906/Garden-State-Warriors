@@ -52,8 +52,8 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   const showBio = hasVal(player.bio);
   const showMeaning = hasVal(player.whatWarriorsMeans);
   const showExperience = hasVal(player.experience);
-  const showQuestionsInfo = hasVal(player.questionsInfo);
-  const showBioOrMeaning = showBio || showMeaning || showExperience || showQuestionsInfo;
+  // Additional Questions / Info is internal only and stored in Google Sheets from the form, not displayed in player profile UI
+  const showBioOrMeaning = showBio || showMeaning || showExperience;
 
   const validMedia = (player.mediaGallery || []).filter((m) => hasVal(m.url));
   const showMediaSection = validMedia.length > 0;
@@ -303,15 +303,6 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     Hockey Experience
                   </h3>
                   <p className="text-sm text-neutral-200 leading-relaxed">{player.experience}</p>
-                </div>
-              )}
-
-              {showQuestionsInfo && (
-                <div className={showBio || showMeaning || showExperience ? 'border-t border-white/10 pt-4' : ''}>
-                  <h3 className="text-sm font-bold text-[#EAB308] font-display uppercase tracking-wider mb-1.5">
-                    Additional Questions / Info
-                  </h3>
-                  <p className="text-sm text-neutral-200 leading-relaxed">{player.questionsInfo}</p>
                 </div>
               )}
             </div>
