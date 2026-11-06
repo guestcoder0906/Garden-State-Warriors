@@ -32,18 +32,14 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   const showPositionOrRankBox =
     hasVal(player.position) || hasVal(player.rank) || hasVal(player.tierTab);
   const showEraOrHometownBox = hasVal(player.yearsOfService) || hasVal(player.hometown);
-  const showPreferredContact = hasVal(player.preferredContact);
-  const showPhone = hasVal(player.phone);
-  const showEmail = hasVal(player.email);
-  const showContactBox = showPreferredContact || showPhone || showEmail;
+  // Contact Information (Phone, Email, Preferred Contact) is internal only and stored in Google Sheets from the form, not displayed in public UI
 
   const showAnySpecBox =
     showJerseyOrPosBox ||
     showNameBox ||
     showBranchBox ||
     showPositionOrRankBox ||
-    showEraOrHometownBox ||
-    showContactBox;
+    showEraOrHometownBox;
 
   const showJerseyPhoto = hasVal(player.jerseyPhotoUrl);
   const showMilitaryPhoto = hasVal(player.militaryPhotoUrl);
@@ -190,23 +186,6 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                         {[
                           hasVal(player.yearsOfService) && player.yearsOfService,
                           hasVal(player.hometown) && player.hometown,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {showContactBox && (
-                  <div className="bg-[#142019] border border-white/10 rounded-xl px-4 py-2.5 flex items-center">
-                    <div>
-                      <span className="text-[11px] text-neutral-400 block">Contact Information</span>
-                      <span className="text-sm font-semibold text-white font-mono-tabular">
-                        {[
-                          hasVal(player.preferredContact) && `Preferred: ${player.preferredContact}`,
-                          hasVal(player.phone) && player.phone,
-                          hasVal(player.email) && player.email,
                         ]
                           .filter(Boolean)
                           .join(' · ')}
