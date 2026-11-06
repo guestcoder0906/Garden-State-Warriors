@@ -126,9 +126,9 @@ test('filterPlayers filters by tierTab, rankFilter, and searchQuery', () => {
 
 test('parseSheetRowsToSponsors only returns sponsors where Verified checkbox is checked (TRUE) and parses Website & Message', () => {
   const rows = [
-    ['Verified', 'Timestamp Submitted', 'Name', 'Phone', 'Email', 'Preferred Contact', 'Website', 'Message', 'LogoUrl'],
-    ['FALSE', '11/5/2026, 9:30 AM', 'Pending Sponsor', '555-1111', 'pending@example.com', 'Email', 'https://pending.com', 'Pending message', 'data:image/png;base64,abc'],
-    ['TRUE', '11/5/2026, 9:35 AM', 'Approved Sponsor', '555-2222', 'approved@example.com', 'Text, Call', 'www.approved.org', 'Proud to support NJ veterans!', 'https://example.com/logo.png'],
+    ['Verified', 'Timestamp', 'Submitted', 'Name', 'Phone', 'Email', 'Preferred Contact', 'Website', 'Message', 'LogoUrl', 'Tier'],
+    ['FALSE', '11/5/2026, 9:30 AM', '11/5/2026, 9:30 AM', 'Pending Sponsor', '555-1111', 'pending@example.com', 'Email', 'https://pending.com', 'Pending message', 'data:image/png;base64,abc', 'Bronze Sponsor'],
+    ['TRUE', '11/5/2026, 9:35 AM', '11/5/2026, 9:35 AM', 'Approved Sponsor', '555-2222', 'approved@example.com', 'Text, Call', 'www.approved.org', 'Proud to support NJ veterans!', 'https://example.com/logo.png', 'Gold Sponsor'],
   ];
   const sponsors = parseSheetRowsToSponsors(rows);
   assert.equal(sponsors.length, 1);
@@ -136,6 +136,7 @@ test('parseSheetRowsToSponsors only returns sponsors where Verified checkbox is 
   assert.equal(sponsors[0].website, 'www.approved.org');
   assert.equal(sponsors[0].message, 'Proud to support NJ veterans!');
   assert.equal(sponsors[0].logoUrl, 'https://example.com/logo.png');
+  assert.equal(sponsors[0].tier, 'Gold Sponsor');
 });
 
 test('parseAppsScriptPayload ignores Become Warrior tab directly and reads verified players appended into Garden State Warriors Roster tab', () => {
