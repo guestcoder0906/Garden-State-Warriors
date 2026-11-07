@@ -209,15 +209,13 @@ export const BecomeWarriorForm: React.FC<{ onSubmitted?: () => void }> = ({ onSu
         <div className="bg-[#0A120E] border border-[#EAB308]/40 rounded-2xl p-6 sm:p-8 space-y-6">
           <div className="border-b border-white/10 pb-4 space-y-1">
             <span className="text-xs text-[#EAB308] font-mono-tabular">
-              Official Player Registration
+              Player Registration
             </span>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-display uppercase tracking-wide">
               Become a Warrior
             </h2>
             <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed">
-              Submit your veteran player application below. Once club leadership reviews and
-              verifies your application in Google Sheets, your player row will automatically be
-              added to the Garden State Warriors Roster.
+              A member of the team will contact you to confirm eligibility, give more information about the team, and answer additional questions.
             </p>
           </div>
 
