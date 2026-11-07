@@ -2126,7 +2126,7 @@ export default function App() {
                     rows={3}
                     value={sponsorMessage}
                     onChange={(e) => setSponsorMessage(e.target.value)}
-                    placeholder="Optional sponsor message or note to display on our Home page..."
+                    placeholder="Optional sponsor message"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#070C09] border border-white/15 text-sm text-white focus:border-[#EAB308] focus:outline-none"
                   />
                 </div>
