@@ -22,7 +22,7 @@ export interface DynamicSyncResult {
   detectedTabs: string[];
 }
 
-const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v7';
+const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v8';
 const LEGACY_CACHE_KEYS = [
   'gsw_verified_sheet_cache_v1',
   'gsw_verified_sheet_cache_v2',
@@ -30,6 +30,7 @@ const LEGACY_CACHE_KEYS = [
   'gsw_verified_sheet_cache_v4',
   'gsw_verified_sheet_cache_v5',
   'gsw_verified_sheet_cache_v6',
+  'gsw_verified_sheet_cache_v7',
 ];
 let inMemoryCache: DynamicSyncResult | null = null;
 let inFlightSyncPromise: Promise<DynamicSyncResult | null> | null = null;
@@ -161,7 +162,7 @@ export async function submitSponsorToGoogleSheet(
           ok: true,
           uploadedLogoUrl: resData?.logoUrl || finalLogoUrl,
           message:
-            'Thank you! Your sponsor application and logo have been saved to our Google Sheet and will appear on the Home page once verified.',
+            'Thank you! Your sponsor application and logo have been saved to our Google Sheet and will appear on our Sponsors page and Home page once verified.',
         };
       }
     } catch {
@@ -183,9 +184,9 @@ export async function submitSponsorToGoogleSheet(
       if (data && data.ok) {
         return {
           ok: true,
-          uploadedLogoUrl: data.logoUrl || finalLogoUrl,
+          uploadedLogoUrl: data?.logoUrl || finalLogoUrl,
           message:
-            'Thank you! Your sponsor application and logo have been saved to our Google Sheet and will appear on the Home page once verified.',
+            'Thank you! Your sponsor application and logo have been saved to our Google Sheet and will appear on our Sponsors page and Home page once verified.',
         };
       }
     }
