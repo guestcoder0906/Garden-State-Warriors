@@ -5,24 +5,20 @@ import {
   ClubEvent,
   FanItem,
   SponsorItem,
+  DynamicSyncResult,
   extractSpreadsheetId,
   parseAppsScriptPayload,
+  mergeDynamicSyncResults,
 } from '../utils/rosterLogic';
 import {
   uploadSponsorImageToFirebase,
-  resolveSheetUrlIfFirebase,
+  prewarmFirebaseImageUrl,
 } from './firebaseStorage';
 
-export interface DynamicSyncResult {
-  players: PlayerProfile[];
-  staff: StaffMember[];
-  events: ClubEvent[];
-  fans: FanItem[];
-  sponsors: SponsorItem[];
-  detectedTabs: string[];
-}
+export type { DynamicSyncResult };
+export { mergeDynamicSyncResults };
 
-const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v8';
+const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v11';
 const LEGACY_CACHE_KEYS = [
   'gsw_verified_sheet_cache_v1',
   'gsw_verified_sheet_cache_v2',
@@ -31,9 +27,50 @@ const LEGACY_CACHE_KEYS = [
   'gsw_verified_sheet_cache_v5',
   'gsw_verified_sheet_cache_v6',
   'gsw_verified_sheet_cache_v7',
+  'gsw_verified_sheet_cache_v8',
+  'gsw_verified_sheet_cache_v9',
+  'gsw_verified_sheet_cache_v10',
 ];
 let inMemoryCache: DynamicSyncResult | null = null;
 let inFlightSyncPromise: Promise<DynamicSyncResult | null> | null = null;
+
+function stripBlobUrl(url?: string): string | undefined {
+  if (!url) return undefined;
+  return url.startsWith('blob:') ? undefined : url;
+}
+
+function sanitizeSyncResultUrls(result: DynamicSyncResult): DynamicSyncResult {
+  return {
+    ...result,
+    players: (result.players || []).map((p) => ({
+      ...p,
+      jerseyPhotoUrl: stripBlobUrl(p.jerseyPhotoUrl),
+      profilePictureUrl: stripBlobUrl(p.profilePictureUrl),
+      militaryPhotoUrl: stripBlobUrl(p.militaryPhotoUrl),
+      mediaGallery: (p.mediaGallery || []).filter((m) => m.url && !m.url.startsWith('blob:')),
+    })),
+    staff: (result.staff || []).map((s) => ({
+      ...s,
+      photoUrl: stripBlobUrl(s.photoUrl),
+      militaryPhotoUrl: stripBlobUrl(s.militaryPhotoUrl),
+      mediaGallery: s.mediaGallery
+        ? s.mediaGallery.filter((m) => m.url && !m.url.startsWith('blob:'))
+        : undefined,
+    })),
+    events: (result.events || []).map((ev) => ({
+      ...ev,
+      imageUrl: stripBlobUrl(ev.imageUrl),
+    })),
+    fans: (result.fans || []).map((fn) => ({
+      ...fn,
+      photoUrl: stripBlobUrl(fn.photoUrl),
+    })),
+    sponsors: (result.sponsors || []).map((sp) => ({
+      ...sp,
+      logoUrl: stripBlobUrl(sp.logoUrl),
+    })),
+  };
+}
 
 /**
  * Returns the most recent cached Google Sheet data synchronously (0ms) so all sheet-connected UIs
@@ -50,8 +87,9 @@ export function getCachedSheetSyncResult(): DynamicSyncResult | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as DynamicSyncResult;
     if (parsed && Array.isArray(parsed.players)) {
-      inMemoryCache = parsed;
-      return parsed;
+      const sanitized = sanitizeSyncResultUrls(parsed);
+      inMemoryCache = sanitized;
+      return sanitized;
     }
   } catch {
     // Ignore storage read errors
@@ -60,10 +98,11 @@ export function getCachedSheetSyncResult(): DynamicSyncResult | null {
 }
 
 function saveCachedSheetSyncResult(result: DynamicSyncResult): void {
-  inMemoryCache = result;
+  const cleanResult = sanitizeSyncResultUrls(result);
+  inMemoryCache = cleanResult;
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(SHEET_CACHE_STORAGE_KEY, JSON.stringify(result));
+    window.localStorage.setItem(SHEET_CACHE_STORAGE_KEY, JSON.stringify(cleanResult));
   } catch {
     // Ignore quota errors
   }
@@ -451,7 +490,7 @@ async function fetchAppsScriptOrApiPayload(
   ) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 7500);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const separator = appsScriptUrl.includes('?') ? '&' : '?';
       // Pass nocache=1&_t=... so Apps Script CacheService never serves stale/removed rows
       const res = await fetch(`${appsScriptUrl}${separator}nocache=1&_t=${Date.now()}`, {
@@ -474,7 +513,7 @@ async function fetchAppsScriptOrApiPayload(
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     const apiRes = await fetch(`/api/sync?nocache=1&_t=${Date.now()}`, {
       cache: 'no-store',
       signal: controller.signal,
@@ -506,189 +545,42 @@ async function fetchAppsScriptOrApiPayload(
 }
 
 /**
- * Merges two sync results (Apps Script + Direct gviz/tq) without EVER resurrecting removed rows:
- * - `gvizRes` (direct live query to Google Sheets) is the authoritative source of which rows currently exist in the sheet.
- * - `appsScriptRes` enriches matching existing rows with any in-cell `CellImage.getContentUrl()` URLs that `gviz/tq` cannot see.
+ * Pre-warms any Firebase asset URLs (`/api/firebase-image?id=...` or `firestore.googleapis.com/.../sponsor_assets/...`)
+ * in the client-side in-memory cache while preserving canonical URLs in state & localStorage.
  */
-function mergeDynamicSyncResults(
-  appsScriptRes: DynamicSyncResult | null,
-  gvizRes: DynamicSyncResult | null
-): DynamicSyncResult | null {
-  if (!appsScriptRes && !gvizRes) return null;
-  if (appsScriptRes && !gvizRes) return appsScriptRes;
-  if (!appsScriptRes && gvizRes) return gvizRes;
+async function prewarmFirebaseImagesClientSide(result: DynamicSyncResult): Promise<void> {
+  const urlsToWarm: Array<string | undefined> = [
+    ...result.sponsors.map((sp) => sp.logoUrl),
+    ...result.staff.flatMap((st) => [st.photoUrl, st.militaryPhotoUrl]),
+    ...result.fans.map((fn) => fn.photoUrl),
+    ...result.events.map((ev) => ev.imageUrl),
+    ...result.players.flatMap((pl) => [
+      pl.jerseyPhotoUrl,
+      pl.profilePictureUrl,
+      pl.militaryPhotoUrl,
+      ...(pl.mediaGallery || []).map((m) => m.url),
+    ]),
+  ];
 
-  const a = appsScriptRes!;
-  const g = gvizRes!;
-
-  // Use g.players as the authoritative list of rows currently in the Roster sheet,
-  // enriched with any in-cell images from matching players in a.players
-  const aPlayerByName = new Map<string, PlayerProfile>();
-  for (const ap of a.players) {
-    const key = (ap.name || '').trim().toLowerCase();
-    if (key) aPlayerByName.set(key, ap);
-  }
-
-  const players: PlayerProfile[] = g.players.map((gp) => {
-    const key = (gp.name || '').trim().toLowerCase();
-    const ap = key ? aPlayerByName.get(key) : undefined;
-    if (!ap) return gp;
-    return {
-      ...gp,
-      jerseyPhotoUrl: gp.jerseyPhotoUrl || ap.jerseyPhotoUrl,
-      militaryPhotoUrl: gp.militaryPhotoUrl || ap.militaryPhotoUrl,
-      preferredContact: gp.preferredContact || ap.preferredContact,
-      questionsInfo: gp.questionsInfo || ap.questionsInfo,
-      experience: gp.experience || ap.experience,
-      phone: gp.phone || ap.phone,
-      email: gp.email || ap.email,
-      mediaGallery: gp.mediaGallery.length > 0 ? gp.mediaGallery : ap.mediaGallery,
-    };
-  });
-
-  // Enrich Board and Coach staff members from Apps Script without resurrecting deleted rows
-  const mergeStaffCategory = (category: 'Board' | 'Coach'): StaffMember[] => {
-    const gList = g.staff.filter((s) => s.category === category);
-    const aList = a.staff.filter((s) => s.category === category);
-    if (gList.length === 0 && aList.length > 0 && !g.detectedTabs.includes(category)) {
-      return aList;
-    }
-    return gList.map((gs, idx) => {
-      const match =
-        aList.find(
-          (as) =>
-            as.name &&
-            gs.name &&
-            as.name.trim().toLowerCase() === gs.name.trim().toLowerCase()
-        ) || aList[idx];
-      if (!match) return gs;
-      return {
-        ...gs,
-        photoUrl: gs.photoUrl || match.photoUrl,
-        militaryPhotoUrl: gs.militaryPhotoUrl || match.militaryPhotoUrl,
-        mediaGallery:
-          gs.mediaGallery && gs.mediaGallery.length > 0 ? gs.mediaGallery : match.mediaGallery,
-      };
-    });
-  };
-
-  const staff = [...mergeStaffCategory('Board'), ...mergeStaffCategory('Coach')];
-
-  const events = g.events.map((ge, idx) => {
-    const match =
-      a.events.find(
-        (ae) =>
-          ae.title &&
-          ge.title &&
-          ae.title.trim().toLowerCase() === ge.title.trim().toLowerCase()
-      ) || a.events[idx];
-    return match ? { ...ge, imageUrl: ge.imageUrl || match.imageUrl } : ge;
-  });
-
-  const fans = g.fans.map((gf, idx) => {
-    const match =
-      a.fans.find(
-        (af) =>
-          af.title &&
-          gf.title &&
-          af.title.trim().toLowerCase() === gf.title.trim().toLowerCase()
-      ) || a.fans[idx];
-    return match ? { ...gf, photoUrl: gf.photoUrl || match.photoUrl } : gf;
-  });
-
-  const sponsors = g.sponsors.map((gs, idx) => {
-    const match =
-      a.sponsors.find(
-        (as) =>
-          as.name &&
-          gs.name &&
-          as.name.trim().toLowerCase() === gs.name.trim().toLowerCase()
-      ) || a.sponsors[idx];
-    return match ? { ...gs, logoUrl: gs.logoUrl || match.logoUrl } : gs;
-  });
-
-  const detectedTabs = Array.from(new Set([...g.detectedTabs, ...a.detectedTabs]));
-
-  return {
-    players,
-    staff,
-    events,
-    fans,
-    sponsors,
-    detectedTabs,
-  };
-}
-
-/**
- * Resolves any Firebase asset URLs (`/api/firebase-image?id=...` or `firestore.googleapis.com/.../sponsor_assets/...`)
- * 100% client-side in the browser via the Firebase SDK so no server is needed to render uploaded images.
- */
-async function hydrateFirebaseImagesClientSide(
-  result: DynamicSyncResult
-): Promise<DynamicSyncResult> {
-  const [sponsors, staff, fans, events, players] = await Promise.all([
-    Promise.all(
-      result.sponsors.map(async (sp) => ({
-        ...sp,
-        logoUrl: await resolveSheetUrlIfFirebase(sp.logoUrl),
-      }))
-    ),
-    Promise.all(
-      result.staff.map(async (st) => ({
-        ...st,
-        photoUrl: await resolveSheetUrlIfFirebase(st.photoUrl),
-        militaryPhotoUrl: await resolveSheetUrlIfFirebase(st.militaryPhotoUrl),
-      }))
-    ),
-    Promise.all(
-      result.fans.map(async (fn) => ({
-        ...fn,
-        photoUrl: await resolveSheetUrlIfFirebase(fn.photoUrl),
-      }))
-    ),
-    Promise.all(
-      result.events.map(async (ev) => ({
-        ...ev,
-        imageUrl: await resolveSheetUrlIfFirebase(ev.imageUrl),
-      }))
-    ),
-    Promise.all(
-      result.players.map(async (pl) => ({
-        ...pl,
-        jerseyPhotoUrl: await resolveSheetUrlIfFirebase(pl.jerseyPhotoUrl),
-        militaryPhotoUrl: await resolveSheetUrlIfFirebase(pl.militaryPhotoUrl),
-        mediaGallery: await Promise.all(
-          (pl.mediaGallery || []).map(async (item) => ({
-            ...item,
-            url: (await resolveSheetUrlIfFirebase(item.url)) || item.url,
-          }))
-        ),
-      }))
-    ),
-  ]);
-
-  return {
-    ...result,
-    sponsors,
-    staff,
-    fans,
-    events,
-    players,
-  };
+  await Promise.all(
+    urlsToWarm
+      .filter((u): u is string => Boolean(u))
+      .map((u) => prewarmFirebaseImageUrl(u))
+  );
 }
 
 /**
  * Dynamically fetches all tabs from the verified Google Sheet (`1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s`)
  * by running Direct Google Sheets `gviz/tq` AND Google Apps Script `doGet` in parallel:
- * - Whichever resolves first immediately triggers `onFastResult` (typically < 300ms) so the UI renders fast.
- * - Once both settle, merges them, caches the result in localStorage, and hydrates any Firebase image URLs client-side.
+ * - On an empty cold cache, `gviz/tq` triggers `onFastResult` (~200-350ms) so the UI renders fast.
+ * - On subsequent background polls, waits for Apps Script + `gviz/tq` together so `gviz` never
+ *   temporarily wipes out in-cell `CellImage` (`sheets-images-rt`) URLs that only Apps Script sees.
  */
 export async function syncVerifiedGoogleSheet(
   onFastResult?: (fastData: DynamicSyncResult) => void
 ): Promise<DynamicSyncResult | null> {
   if (inFlightSyncPromise) {
     const shared = await inFlightSyncPromise;
-    if (shared && onFastResult) onFastResult(shared);
     return shared;
   }
 
@@ -701,16 +593,22 @@ export async function syncVerifiedGoogleSheet(
       import.meta.env.VITE_GOOGLE_SPREADSHEET_ID || VERIFIED_SPREADSHEET_ID;
     const spreadsheetId = extractSpreadsheetId(rawSheetId) || VERIFIED_SPREADSHEET_ID;
 
+    const existingCache = inMemoryCache || getCachedSheetSyncResult();
+    const hasWarmCache = Boolean(
+      existingCache &&
+        (existingCache.players.length > 0 ||
+          existingCache.staff.length > 0 ||
+          existingCache.sponsors.length > 0)
+    );
+
     let mergeCompleted = false;
 
     const gvizPromise = fetchDirectGvizAllTabs(spreadsheetId).then(async (res) => {
-      if (res && !mergeCompleted) {
-        saveCachedSheetSyncResult(res);
-        if (onFastResult && !mergeCompleted) onFastResult(res);
-        const hydrated = await hydrateFirebaseImagesClientSide(res);
+      if (res && !mergeCompleted && !hasWarmCache) {
+        await prewarmFirebaseImagesClientSide(res);
         if (!mergeCompleted) {
-          saveCachedSheetSyncResult(hydrated);
-          if (onFastResult) onFastResult(hydrated);
+          saveCachedSheetSyncResult(res);
+          if (onFastResult) onFastResult(res);
         }
       }
       return res;
@@ -721,12 +619,12 @@ export async function syncVerifiedGoogleSheet(
     const [gvizRes, appsScriptRes] = await Promise.all([gvizPromise, appsScriptPromise]);
     mergeCompleted = true;
 
-    const merged = mergeDynamicSyncResults(appsScriptRes, gvizRes);
+    const merged = mergeDynamicSyncResults(appsScriptRes, gvizRes, existingCache);
 
     if (merged) {
-      const hydratedMerged = await hydrateFirebaseImagesClientSide(merged);
-      saveCachedSheetSyncResult(hydratedMerged);
-      return hydratedMerged;
+      await prewarmFirebaseImagesClientSide(merged);
+      saveCachedSheetSyncResult(merged);
+      return merged;
     }
 
     return null;
@@ -739,4 +637,5 @@ export async function syncVerifiedGoogleSheet(
     inFlightSyncPromise = null;
   }
 }
+
 

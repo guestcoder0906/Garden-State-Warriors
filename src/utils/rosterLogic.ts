@@ -21,6 +21,7 @@ export const EXACT_SHEET_HEADERS = [
   'Experience',
   'Phone',
   'Email',
+  'Profile Picture',
 ] as const;
 
 export interface PlayerMediaItem {
@@ -54,6 +55,7 @@ export interface PlayerProfile {
   email?: string;
   isTestimonyFeatured?: boolean;
   jerseyPhotoUrl?: string;
+  profilePictureUrl?: string;
   militaryPhotoUrl?: string;
   jerseyPhotoPlaceholder: string;
   militaryPhotoPlaceholder: string;
@@ -151,14 +153,14 @@ function normalizeHeaderKey(header: string): string {
 
 /**
  * Cleans a raw cell value from Google Sheets or Apps Script.
- * Any empty string, "--", "—", or "[Insert/Replace ...]" placeholder is treated as empty ('')
- * so its corresponding UI is completely hidden while the cell is empty.
+ * Any empty string, "--", "—", or internal "[Replace with ...]" placeholder tag is treated as empty ('')
+ * while preserving user-entered text in Google Sheets (such as "[Bio Inserted Here]" or "[Insert Name]").
  */
 export function cleanSheetCell(val: unknown): string {
   if (val === null || val === undefined) return '';
   const str = String(val).trim();
   if (!str || str === '--' || str === '—' || str === 'CellImage') return '';
-  if (str.startsWith('[') && str.endsWith(']')) return '';
+  if (/^\[replace with\b.*\]$/i.test(str)) return '';
   return str;
 }
 
@@ -178,8 +180,13 @@ export function normalizeSheetImageUrl(val: unknown): string {
   const candidate = formulaMatch && formulaMatch[1] ? formulaMatch[1].trim() : cleaned;
   if (!candidate || candidate === 'CellImage') return '';
 
-  // 2. Reject local-only blob: or base64 data:image strings from sheet cells
-  if (candidate.startsWith('blob:') || candidate.startsWith('data:image/')) {
+  // 2. Reject local-only blob:, base64 data:image strings, or non-URL placeholder notes from sheet cells
+  if (
+    candidate.startsWith('blob:') ||
+    candidate.startsWith('data:image/') ||
+    candidate.startsWith('[') ||
+    candidate.endsWith(']')
+  ) {
     return '';
   }
 
@@ -259,7 +266,11 @@ export function parseSheetRowsToPlayers(
   const idxEra = findCol(['serviceera', 'era', 'yearsofservice', 'years'], ['serviceera', 'era', 'years']);
   const idxHometown = findCol(['hometown', 'city', 'town'], ['hometown', 'town']);
   const idxRole = findCol(['rolebadge', 'role', 'badge', 'captain'], ['role', 'badge', 'captain']);
-  const idxJerseyPhoto = findCol(['jerseyphotourl', 'jerseyphoto', 'photo', 'headshot'], ['jerseyphoto', 'headshot', 'portrait']);
+  const idxJerseyPhoto = findCol(['jerseyphotourl', 'jerseyphoto'], ['jerseyphoto']);
+  const idxProfilePicture = findCol(
+    ['profilepicture', 'profilephotourl', 'profilephoto', 'headshot', 'portrait'],
+    ['profilepicture', 'profilephoto', 'headshot', 'portrait']
+  );
   const idxMilitaryPhoto = findCol(['militaryphotourl', 'militaryphoto', 'servicephoto'], ['militaryphoto', 'servicephoto']);
   const idxBio = findCol(['bio', 'biography'], ['bio', 'history']);
   const idxMeaning = findCol(
@@ -348,6 +359,7 @@ export function parseSheetRowsToPlayers(
     const rawBio = getCell(idxBio);
     const rawMeaning = getCell(idxMeaning);
     const jerseyPhotoUrl = normalizeSheetImageUrl(getCell(idxJerseyPhoto)) || undefined;
+    const profilePictureUrl = normalizeSheetImageUrl(getCell(idxProfilePicture)) || undefined;
     const militaryPhotoUrl = normalizeSheetImageUrl(getCell(idxMilitaryPhoto)) || undefined;
     const rawMedia = getCell(idxMedia);
     const preferredContact = getCell(idxPreferredContact) || undefined;
@@ -424,6 +436,7 @@ export function parseSheetRowsToPlayers(
       email,
       isTestimonyFeatured: Boolean(rawMeaning),
       jerseyPhotoUrl,
+      profilePictureUrl,
       militaryPhotoUrl,
       jerseyPhotoPlaceholder: '',
       militaryPhotoPlaceholder: '',
@@ -461,9 +474,18 @@ export function parseSheetRowsToStaff(
   const idxRank = findCol(['militaryrank', 'rank']);
   const idxEra = findCol(['serviceera', 'era', 'yearsofservice']);
   const idxHometown = findCol(['hometown', 'city', 'town']);
-  const idxCaption = findCol(['caption', 'bio', 'description']);
+  const captionColIndices = normHeaders
+    .map((h, idx) =>
+      ['caption', 'bio', 'biography', 'description', 'about', 'story', 'notes'].some(
+        (k) => h === k || h.includes(k)
+      )
+        ? idx
+        : -1
+    )
+    .filter((idx) => idx >= 0);
+  const idxCaption = findCol(['caption', 'bio', 'description', 'about', 'story', 'notes']);
   const idxMeaning = findCol(['whatwarriormeans', 'whatwarriorsmeans', 'testimony']);
-  const idxPhoto = findCol(['photourl', 'jerseyphotourl', 'photo', 'imageurl', 'image', 'headshot']);
+  const idxPhoto = findCol(['photourl', 'jerseyphotourl', 'profilepicture', 'photo', 'imageurl', 'image', 'headshot']);
   const idxMilitaryPhoto = findCol(['militaryphotourl', 'militaryphoto', 'servicephoto']);
   const idxMedia = findCol(['mediaurlscsv', 'mediaurls', 'media']);
 
@@ -504,7 +526,13 @@ export function parseSheetRowsToStaff(
     const rank = getCell(idxRank);
     const serviceEra = getCell(idxEra);
     const hometown = getCell(idxHometown);
-    const caption = getCell(idxCaption);
+    const captionFromAllCols = captionColIndices
+      .map((colIdx) => getCell(colIdx))
+      .filter(Boolean);
+    const caption =
+      captionFromAllCols.length > 0
+        ? Array.from(new Set(captionFromAllCols)).join(' — ')
+        : getCell(idxCaption);
     const whatWarriorMeans = getCell(idxMeaning);
     const photoUrl = normalizeSheetImageUrl(getCell(idxPhoto)) || undefined;
     const militaryPhotoUrl = normalizeSheetImageUrl(getCell(idxMilitaryPhoto)) || undefined;
@@ -871,10 +899,15 @@ export function parseAppsScriptPayload(payload: {
       const inlineStaff = parseSheetRowsToStaff(rows, 'Auto');
       const inlineEvents = parseSheetRowsToEvents(rows, 'InlineRosterTab');
       if (parsedPlayers.length > 0) {
+        const tabSlug = `sheet-${(tabName || 'roster').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-`;
         for (const pl of parsedPlayers) {
           const key = pl.name.trim().toLowerCase();
           const existingIdx = allPlayers.findIndex(
-            (existing) => key && existing.name.trim().toLowerCase() === key
+            (existing) =>
+              key &&
+              existing.name.trim().toLowerCase() === key &&
+              !existing.id.startsWith(tabSlug) &&
+              (!existing.jerseyNumber || !pl.jerseyNumber || existing.jerseyNumber === pl.jerseyNumber)
           );
           if (existingIdx === -1) {
             allPlayers.push(pl);
@@ -887,6 +920,7 @@ export function parseAppsScriptPayload(payload: {
               position: pl.position || ex.position,
               tierTab: pl.tierTab || ex.tierTab,
               jerseyPhotoUrl: pl.jerseyPhotoUrl || ex.jerseyPhotoUrl,
+              profilePictureUrl: pl.profilePictureUrl || ex.profilePictureUrl,
               militaryPhotoUrl: pl.militaryPhotoUrl || ex.militaryPhotoUrl,
               bio: pl.bio || ex.bio,
               whatWarriorsMeans: pl.whatWarriorsMeans || ex.whatWarriorsMeans,
@@ -960,6 +994,8 @@ export function parseAppsScriptPayload(payload: {
       const phone = cleanSheetCell(p.phone) || undefined;
       const email = cleanSheetCell(p.email) || undefined;
       const jerseyPhotoUrl = normalizeSheetImageUrl(p.jerseyPhotoUrl) || undefined;
+      const profilePictureUrl =
+        normalizeSheetImageUrl(p.profilePictureUrl || p.profilePicture) || undefined;
       const militaryPhotoUrl = normalizeSheetImageUrl(p.militaryPhotoUrl) || undefined;
       const rawRoleBadge = cleanSheetCell(p.roleBadge);
 
@@ -995,6 +1031,7 @@ export function parseAppsScriptPayload(payload: {
         email,
         isTestimonyFeatured: Boolean(whatWarriorsMeans),
         jerseyPhotoUrl,
+        profilePictureUrl,
         militaryPhotoUrl,
         jerseyPhotoPlaceholder: '',
         militaryPhotoPlaceholder: '',
@@ -1021,14 +1058,19 @@ export function parseAppsScriptPayload(payload: {
     payload.board.forEach((b: any, i: number) => {
       const name = cleanSheetCell(b.name);
       const role = cleanSheetCell(b.role);
-      const caption = cleanSheetCell(b.caption);
+      const caption = cleanSheetCell(b.caption || b.bio || b.description);
       const photoUrl = normalizeSheetImageUrl(b.photoUrl) || undefined;
-      if (!name && !role && !caption && !photoUrl) return;
+      const rank = cleanSheetCell(b.rank || b.militaryRank) || undefined;
+      const branchOrBackground =
+        cleanSheetCell(b.branch || b.militaryBranch || b.branchOrBackground) || undefined;
+      if (!name && !role && !caption && !photoUrl && !rank && !branchOrBackground) return;
       allStaff.push({
         id: b.id || `as-board-${i}`,
         name,
         role,
         category: 'Board',
+        branchOrBackground,
+        rank,
         caption,
         photoUrl,
         photoPlaceholder: '',
@@ -1041,10 +1083,12 @@ export function parseAppsScriptPayload(payload: {
     payload.coaches.forEach((c: any, i: number) => {
       const name = cleanSheetCell(c.name);
       const role = cleanSheetCell(c.role);
-      const caption = cleanSheetCell(c.caption);
+      const caption = cleanSheetCell(c.caption || c.bio || c.description);
       const photoUrl = normalizeSheetImageUrl(c.photoUrl) || undefined;
       const militaryPhotoUrl = normalizeSheetImageUrl(c.militaryPhotoUrl) || undefined;
-      const branchOrBackground = cleanSheetCell(c.branch || c.branchOrBackground) || undefined;
+      const rank = cleanSheetCell(c.rank || c.militaryRank) || undefined;
+      const branchOrBackground =
+        cleanSheetCell(c.branch || c.militaryBranch || c.branchOrBackground) || undefined;
       const serviceEra = cleanSheetCell(c.serviceEra) || undefined;
       const hometown = cleanSheetCell(c.hometown) || undefined;
       const whatWarriorMeans = cleanSheetCell(c.whatWarriorMeans) || undefined;
@@ -1068,6 +1112,7 @@ export function parseAppsScriptPayload(payload: {
         !caption &&
         !photoUrl &&
         !militaryPhotoUrl &&
+        !rank &&
         !branchOrBackground &&
         !whatWarriorMeans
       ) {
@@ -1078,6 +1123,7 @@ export function parseAppsScriptPayload(payload: {
         name,
         role,
         category: 'Coach',
+        rank,
         branchOrBackground,
         serviceEra,
         hometown,
@@ -1221,3 +1267,172 @@ export function filterPlayers(
     return true;
   });
 }
+
+export interface DynamicSyncResult {
+  players: PlayerProfile[];
+  staff: StaffMember[];
+  events: ClubEvent[];
+  fans: FanItem[];
+  sponsors: SponsorItem[];
+  detectedTabs: string[];
+}
+
+/**
+ * Merges two sync results (Apps Script + Direct gviz/tq) without EVER resurrecting removed rows:
+ * - `gvizRes` (direct live query to Google Sheets) is the authoritative source of which rows currently exist in the sheet.
+ * - `appsScriptRes` enriches matching existing rows with any in-cell `CellImage.getContentUrl()` URLs that `gviz/tq` cannot see.
+ * - If `appsScriptRes` failed/timed out on a background poll, `fallbackCache` preserves previously loaded in-cell images
+ *   for rows that still exist in `gvizRes` so transient timeouts never cause images to disappear.
+ */
+export function mergeDynamicSyncResults(
+  appsScriptRes: DynamicSyncResult | null,
+  gvizRes: DynamicSyncResult | null,
+  fallbackCache: DynamicSyncResult | null = null
+): DynamicSyncResult | null {
+  const enrichmentSource = appsScriptRes || fallbackCache;
+  if (!enrichmentSource && !gvizRes) return null;
+  if (appsScriptRes && !gvizRes) return appsScriptRes;
+  if (!enrichmentSource && gvizRes) return gvizRes;
+
+  const a = enrichmentSource!;
+  const g = gvizRes!;
+
+  const usedAIndices = new Set<number>();
+  const players: PlayerProfile[] = g.players.map((gp, idx) => {
+    const gpName = (gp.name || '').trim().toLowerCase();
+    let matchIdx = -1;
+
+    // 1. Exact index match when name also matches
+    const sameIdxPlayer = a.players[idx];
+    if (
+      sameIdxPlayer &&
+      !usedAIndices.has(idx) &&
+      (sameIdxPlayer.name || '').trim().toLowerCase() === gpName
+    ) {
+      matchIdx = idx;
+    }
+
+    // 2. Unclaimed player with matching name (and matching jersey number if present)
+    if (matchIdx === -1 && gpName) {
+      matchIdx = a.players.findIndex(
+        (ap, i) =>
+          !usedAIndices.has(i) &&
+          (ap.name || '').trim().toLowerCase() === gpName &&
+          (!gp.jerseyNumber || !ap.jerseyNumber || ap.jerseyNumber === gp.jerseyNumber)
+      );
+      if (matchIdx === -1) {
+        matchIdx = a.players.findIndex(
+          (ap, i) => !usedAIndices.has(i) && (ap.name || '').trim().toLowerCase() === gpName
+        );
+      }
+    }
+
+    if (matchIdx === -1) return gp;
+    usedAIndices.add(matchIdx);
+    const ap = a.players[matchIdx];
+    return {
+      ...gp,
+      jerseyPhotoUrl: gp.jerseyPhotoUrl || ap.jerseyPhotoUrl,
+      profilePictureUrl: gp.profilePictureUrl || ap.profilePictureUrl,
+      militaryPhotoUrl: gp.militaryPhotoUrl || ap.militaryPhotoUrl,
+      preferredContact: gp.preferredContact || ap.preferredContact,
+      questionsInfo: gp.questionsInfo || ap.questionsInfo,
+      experience: gp.experience || ap.experience,
+      phone: gp.phone || ap.phone,
+      email: gp.email || ap.email,
+      mediaGallery: gp.mediaGallery.length > 0 ? gp.mediaGallery : ap.mediaGallery,
+    };
+  });
+
+  const mergeStaffCategory = (category: 'Board' | 'Coach'): StaffMember[] => {
+    const gList = g.staff.filter((s) => s.category === category);
+    const aList = a.staff.filter((s) => s.category === category);
+    if (gList.length === 0 && aList.length > 0 && !g.detectedTabs.includes(category)) {
+      return aList;
+    }
+    return gList.map((gs, idx) => {
+      const sameIdx = aList[idx];
+      const match =
+        (sameIdx &&
+          (sameIdx.name || '').trim().toLowerCase() === (gs.name || '').trim().toLowerCase()
+          ? sameIdx
+          : undefined) ||
+        aList.find(
+          (as) =>
+            as.name &&
+            gs.name &&
+            as.name.trim().toLowerCase() === gs.name.trim().toLowerCase()
+        ) ||
+        aList[idx];
+      if (!match) return gs;
+      return {
+        ...gs,
+        name: gs.name || match.name,
+        role: gs.role || match.role,
+        caption: gs.caption || match.caption,
+        branchOrBackground: gs.branchOrBackground || match.branchOrBackground,
+        rank: gs.rank || match.rank,
+        serviceEra: gs.serviceEra || match.serviceEra,
+        hometown: gs.hometown || match.hometown,
+        whatWarriorMeans: gs.whatWarriorMeans || match.whatWarriorMeans,
+        photoUrl: gs.photoUrl || match.photoUrl,
+        militaryPhotoUrl: gs.militaryPhotoUrl || match.militaryPhotoUrl,
+        mediaGallery:
+          gs.mediaGallery && gs.mediaGallery.length > 0 ? gs.mediaGallery : match.mediaGallery,
+      };
+    });
+  };
+
+  const staff = [...mergeStaffCategory('Board'), ...mergeStaffCategory('Coach')];
+
+  const events = g.events.map((ge, idx) => {
+    const match =
+      a.events.find(
+        (ae) =>
+          ae.title &&
+          ge.title &&
+          ae.title.trim().toLowerCase() === ge.title.trim().toLowerCase()
+      ) || a.events[idx];
+    return match ? { ...ge, imageUrl: ge.imageUrl || match.imageUrl } : ge;
+  });
+
+  const fans = g.fans.map((gf, idx) => {
+    const match =
+      a.fans.find(
+        (af) =>
+          af.title &&
+          gf.title &&
+          af.title.trim().toLowerCase() === gf.title.trim().toLowerCase()
+      ) || a.fans[idx];
+    return match ? { ...gf, photoUrl: gf.photoUrl || match.photoUrl } : gf;
+  });
+
+  const sponsors = g.sponsors.map((gs, idx) => {
+    const sameIdx = a.sponsors[idx];
+    const match =
+      (sameIdx &&
+        (sameIdx.name || '').trim().toLowerCase() === (gs.name || '').trim().toLowerCase()
+        ? sameIdx
+        : undefined) ||
+      a.sponsors.find(
+        (as) =>
+          as.name &&
+          gs.name &&
+          as.name.trim().toLowerCase() === gs.name.trim().toLowerCase()
+      ) ||
+      a.sponsors[idx];
+    return match ? { ...gs, logoUrl: gs.logoUrl || match.logoUrl } : gs;
+  });
+
+  const detectedTabs = Array.from(new Set([...g.detectedTabs, ...a.detectedTabs]));
+
+  return {
+    players,
+    staff,
+    events,
+    fans,
+    sponsors,
+    detectedTabs,
+  };
+}
+

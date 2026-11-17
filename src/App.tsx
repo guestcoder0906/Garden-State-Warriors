@@ -65,6 +65,7 @@ import {
 import { PlayerProfileModal } from './components/PlayerProfileModal';
 import { BecomeWarriorForm } from './components/BecomeWarriorForm';
 import { SponsorsPage } from './components/SponsorsPage';
+import { SheetImage, PlayerPhotoPair, WarriorAvatar } from './components/SheetImage';
 
 type TopSection =
   | 'home'
@@ -92,6 +93,9 @@ export default function App() {
   // Verified Roster, Staff, Fans, Sponsors & Events State
   // Instantly hydrates from localStorage cache if available (0ms) and updates live from Google Sheets
   const initialCache = useMemo(() => getCachedSheetSyncResult(), []);
+  const lastAppliedSyncSigRef = useRef<string>(
+    initialCache ? JSON.stringify(initialCache) : ''
+  );
   const [players, setPlayers] = useState<PlayerProfile[]>(() => initialCache?.players || []);
   const [staff, setStaff] = useState<StaffMember[]>(() => initialCache?.staff || []);
   const [fans, setFans] = useState<FanItem[]>(() => initialCache?.fans || []);
@@ -334,6 +338,14 @@ export default function App() {
 
     const applySheetData = (sheetData: DynamicSyncResult) => {
       if (!mounted) return;
+      setIsSheetLoading(false);
+
+      const nextSig = JSON.stringify(sheetData);
+      if (nextSig === lastAppliedSyncSigRef.current) {
+        return;
+      }
+      lastAppliedSyncSigRef.current = nextSig;
+
       setPlayers(sheetData.players);
       setSelectedPlayerProfile((prev) => {
         if (!prev) return null;
@@ -347,7 +359,6 @@ export default function App() {
       setFans(sheetData.fans || []);
       setSponsors(sheetData.sponsors || []);
       setDynamicTabs(sheetData.detectedTabs);
-      setIsSheetLoading(false);
     };
 
     const runSync = async () => {
@@ -371,7 +382,7 @@ export default function App() {
     };
 
     runSync();
-    const interval = setInterval(runSync, 10000);
+    const interval = setInterval(runSync, 15000);
     const onFocus = () => runSync();
     const onVisibility = () => {
       if (document.visibilityState === 'visible') runSync();
@@ -385,7 +396,7 @@ export default function App() {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [activeSection, aboutSubTab]);
+  }, []);
 
   // Slide deck autoplay
   useEffect(() => {
@@ -587,7 +598,7 @@ export default function App() {
               </div>
 
               <p className="text-xs text-neutral-300 leading-relaxed">
-                Veteran Hockey Club, run by veterans. Garden State Warriors Disabled Veterans
+                Veteran Hockey Club, run by veterans. Garden State Warriors Veterans
                 Hockey Club Inc. is a registered 501(c)(3) tax-exempt public charity.
               </p>
 
@@ -681,7 +692,7 @@ export default function App() {
                   }
                 }}
                 className={`flex items-center gap-1 whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors uppercase ${
-                  activeSection === 'about' && aboutSubTab !== 'board-staff'
+                  activeSection === 'about'
                     ? 'border-[#EAB308] text-[#EAB308]'
                     : 'border-transparent text-neutral-300 hover:text-white'
                 }`}
@@ -718,18 +729,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
-            <button
-              type="button"
-              onClick={() => navigateToAboutSub('board-staff')}
-              className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors uppercase ${
-                activeSection === 'about' && aboutSubTab === 'board-staff'
-                  ? 'border-[#EAB308] text-[#EAB308]'
-                  : 'border-transparent text-neutral-300 hover:text-white'
-              }`}
-            >
-              Board & Staff
-            </button>
 
             <button
               type="button"
@@ -858,13 +857,6 @@ export default function App() {
             </div>
             <button
               type="button"
-              onClick={() => navigateToAboutSub('board-staff')}
-              className="block w-full text-left py-2 px-3 rounded-lg text-sm font-semibold text-white hover:bg-white/5"
-            >
-              Board & Staff
-            </button>
-            <button
-              type="button"
               onClick={() => navigateToSection('sponsors')}
               className="block w-full text-left py-2 px-3 rounded-lg text-sm font-semibold text-white hover:bg-white/5"
             >
@@ -936,7 +928,7 @@ export default function App() {
                     Garden State Warriors
                   </h1>
                   <p className="text-xs sm:text-sm text-neutral-300">
-                    Disabled Veterans Hockey Club Inc.
+                    Veterans Hockey Club Inc.
                   </p>
                   <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
                     <button
@@ -1083,7 +1075,7 @@ export default function App() {
                   Veteran Hockey, run by veterans.
                 </h2>
                 <p className="text-sm sm:text-base text-[#EAB308] font-semibold leading-relaxed">
-                  Garden State Warriors Disabled Veterans Hockey Club is a registered 501(c)(3)
+                  Garden State Warriors Veterans Hockey Club is a registered 501(c)(3)
                   tax-exempt public charity.
                 </p>
                 <p className="text-[11px] text-amber-200/80 font-mono-tabular pt-1">
@@ -1196,15 +1188,12 @@ export default function App() {
                           </div>
                         )}
                         {sp.logoUrl && (
-                          <div className="w-full pt-2">
-                            <img
-                              src={sp.logoUrl}
-                              alt={sp.name || 'Sponsor Logo'}
-                              onError={handleFirebaseImgError}
-                              className="h-36 sm:h-44 md:h-48 w-full max-w-md object-contain rounded-xl bg-black/40 p-3 border border-white/10"
-                              referrerPolicy="no-referrer"
-                            />
-                          </div>
+                          <SheetImage
+                            src={sp.logoUrl}
+                            alt={sp.name || 'Sponsor Logo'}
+                            wrapperClassName="w-full pt-2"
+                            className="h-36 sm:h-44 md:h-48 w-full max-w-md object-contain rounded-xl bg-black/40 p-3 border border-white/10"
+                          />
                         )}
                       </div>
                     );
@@ -1212,6 +1201,18 @@ export default function App() {
                 </div>
               </section>
             )}
+
+            {/* Powered by InterServer Backlink at Bottom of Homepage */}
+            <div className="pt-4 text-center">
+              <a
+                href="https://www.interserver.net"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-neutral-400 hover:text-[#EAB308] transition-colors font-mono-tabular underline underline-offset-4"
+              >
+                Powered by InterServer
+              </a>
+            </div>
           </div>
         )}
 
@@ -1288,7 +1289,7 @@ export default function App() {
                 </div>
 
                 <p className="text-sm text-neutral-300 leading-relaxed">
-                  Veteran Hockey, run by veterans. Garden State Warriors Disabled Veterans Hockey
+                  Veteran Hockey, run by veterans. Garden State Warriors Veterans Hockey
                   Club Inc. is a registered 501(c)(3) tax-exempt public charity.
                 </p>
               </div>
@@ -1323,14 +1324,12 @@ export default function App() {
                           className="bg-[#0D1611] border border-white/10 rounded-2xl overflow-hidden flex flex-col justify-between"
                         >
                           {member.photoUrl && (
-                            <div className="aspect-square bg-[#080E0B] overflow-hidden">
-                              <img
-                                src={member.photoUrl}
-                                alt={member.name || member.role || 'Board Member'}
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
-                            </div>
+                            <SheetImage
+                              src={member.photoUrl}
+                              alt={member.name || member.role || 'Board Member'}
+                              wrapperClassName="aspect-square bg-[#080E0B] overflow-hidden"
+                              className="w-full h-full object-cover"
+                            />
                           )}
 
                           <div className="p-4 text-center space-y-1.5 bg-[#0A110D] flex-1 flex flex-col justify-center">
@@ -1380,14 +1379,12 @@ export default function App() {
                           className="bg-[#0D1611] border border-white/10 rounded-2xl overflow-hidden flex flex-col justify-between"
                         >
                           {coach.photoUrl && (
-                            <div className="aspect-square bg-[#080E0B] overflow-hidden">
-                              <img
-                                src={coach.photoUrl}
-                                alt={coach.name || coach.role || 'Coach'}
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
-                            </div>
+                            <SheetImage
+                              src={coach.photoUrl}
+                              alt={coach.name || coach.role || 'Coach'}
+                              wrapperClassName="aspect-square bg-[#080E0B] overflow-hidden"
+                              className="w-full h-full object-cover"
+                            />
                           )}
 
                           <div className="p-4 text-center space-y-1.5 bg-[#0A110D] flex-1 flex flex-col justify-center">
@@ -1465,16 +1462,14 @@ export default function App() {
                           className="bg-[#0D1611] border border-white/10 hover:border-[#EAB308]/40 rounded-2xl overflow-hidden flex flex-col justify-between transition-colors"
                         >
                           <div>
-                            {cap.jerseyPhotoUrl && (
-                              <div className="aspect-square bg-[#080E0B] overflow-hidden">
-                                <img
-                                  src={cap.jerseyPhotoUrl}
-                                  alt={cap.name || 'Captain'}
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
-                              </div>
-                            )}
+                            <PlayerPhotoPair
+                              jerseyPhotoUrl={cap.jerseyPhotoUrl}
+                              profilePictureUrl={cap.profilePictureUrl}
+                              playerName={cap.name}
+                              aspectClassName="aspect-square"
+                              jerseyAltFallback="Captain Jersey"
+                              profileAltFallback="Captain Profile"
+                            />
 
                             <div className="p-4 space-y-1.5">
                               {(cap.roleBadge && cap.roleBadge !== 'None' && cap.roleBadge !== 'Player') ||
@@ -1544,21 +1539,12 @@ export default function App() {
                         >
                           <div className="space-y-2.5">
                             <div className="flex items-center gap-2.5">
-                              {testimonyPlayer.jerseyPhotoUrl ? (
-                                <img
-                                  src={testimonyPlayer.jerseyPhotoUrl}
-                                  alt={testimonyPlayer.name || 'Warrior'}
-                                  className="w-10 h-10 object-cover rounded-full shrink-0"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <img
-                                  src={TEAM_LOGOS.greenGoldCrest}
-                                  alt={testimonyPlayer.name || 'Warrior'}
-                                  className="w-10 h-10 object-contain rounded-full shrink-0"
-                                  referrerPolicy="no-referrer"
-                                />
-                              )}
+                              <WarriorAvatar
+                                jerseyPhotoUrl={testimonyPlayer.jerseyPhotoUrl}
+                                profilePictureUrl={testimonyPlayer.profilePictureUrl}
+                                fallbackSrc={TEAM_LOGOS.greenGoldCrest}
+                                alt={testimonyPlayer.name || 'Warrior'}
+                              />
                               <div>
                                 <span className="text-[11px] text-[#EAB308] font-mono-tabular block">
                                   Testimony 0{idx + 1}
@@ -1685,16 +1671,14 @@ export default function App() {
                           className="bg-[#0D1611] border border-white/10 hover:border-[#EAB308]/40 rounded-2xl overflow-hidden flex flex-col justify-between transition-all"
                         >
                           <div>
-                            {player.jerseyPhotoUrl && (
-                              <div className="aspect-[4/3] bg-[#080E0B] overflow-hidden">
-                                <img
-                                  src={player.jerseyPhotoUrl}
-                                  alt={player.name || 'Warrior'}
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
-                              </div>
-                            )}
+                            <PlayerPhotoPair
+                              jerseyPhotoUrl={player.jerseyPhotoUrl}
+                              profilePictureUrl={player.profilePictureUrl}
+                              playerName={player.name}
+                              aspectClassName="aspect-[4/3]"
+                              jerseyAltFallback="Warrior Jersey"
+                              profileAltFallback="Warrior Profile"
+                            />
 
                             <div className="p-4 space-y-1.5">
                               {(player.rank ||
@@ -1808,14 +1792,12 @@ export default function App() {
                       className="bg-[#0D1611] border border-white/10 rounded-2xl overflow-hidden flex flex-col justify-between"
                     >
                       {fan.photoUrl && (
-                        <div className="aspect-video bg-[#080E0B] overflow-hidden">
-                          <img
-                            src={fan.photoUrl}
-                            alt={fan.title || 'Fan Photo'}
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
-                        </div>
+                        <SheetImage
+                          src={fan.photoUrl}
+                          alt={fan.title || 'Fan Photo'}
+                          wrapperClassName="aspect-video bg-[#080E0B] overflow-hidden"
+                          className="w-full h-full object-cover"
+                        />
                       )}
                       <div className="p-4 space-y-1.5 bg-[#0A110D] flex-1">
                         {(fan.roleLabel || fan.category) && (
@@ -1896,14 +1878,12 @@ export default function App() {
                     {(ev.imageUrl || ev.title || ev.date || ev.time || ev.location || ev.category) && (
                       <div className="p-5 border-b border-white/10 flex items-center gap-4">
                         {ev.imageUrl && (
-                          <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden">
-                            <img
-                              src={ev.imageUrl}
-                              alt={ev.title || 'Event'}
-                              className="w-full h-full object-cover"
-                              referrerPolicy="no-referrer"
-                            />
-                          </div>
+                          <SheetImage
+                            src={ev.imageUrl}
+                            alt={ev.title || 'Event'}
+                            wrapperClassName="w-16 h-16 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden"
+                            className="w-full h-full object-cover"
+                          />
                         )}
                         <div className="space-y-1">
                           {ev.category && (
@@ -1982,7 +1962,7 @@ export default function App() {
               </div>
 
               <p className="text-sm text-neutral-300 leading-relaxed">
-                Veteran Hockey, run by veterans. Garden State Warriors Disabled Veterans Hockey
+                Veteran Hockey, run by veterans. Garden State Warriors Veterans Hockey
                 Club Inc. is a registered 501(c)(3) tax-exempt public charity.
               </p>
 
@@ -2247,7 +2227,7 @@ export default function App() {
             />
             <div>
               <span className="text-sm font-bold text-white font-display uppercase block">
-                Garden State Warriors Disabled Veterans Hockey Club Inc.
+                Garden State Warriors Veterans Hockey Club Inc.
               </span>
               <span className="text-[11px] text-neutral-400">
                 Veteran Hockey, run by veterans · Registered 501(c)(3) Public Charity
@@ -2272,6 +2252,15 @@ export default function App() {
               className="hover:text-[#EAB308] transition-colors"
             >
               Facebook
+            </a>
+            <span aria-hidden="true">·</span>
+            <a
+              href="https://www.interserver.net"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[#EAB308] transition-colors"
+            >
+              Powered by InterServer
             </a>
           </div>
         </div>

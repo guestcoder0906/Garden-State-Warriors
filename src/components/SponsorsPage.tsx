@@ -11,6 +11,7 @@ import {
 import { SponsorItem, normalizeWebsiteUrl } from '../utils/rosterLogic';
 import { TEAM_LOGOS } from '../data/seedData';
 import { RecaptchaWidget } from './RecaptchaWidget';
+import { SheetImage } from './SheetImage';
 
 interface SponsorsPageProps {
   sponsors: SponsorItem[];
@@ -107,7 +108,7 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
             <p className="text-sm sm:text-base text-neutral-300 leading-relaxed max-w-2xl">
               Our sponsors make Garden State Warriors hockey possible. Sponsorships directly fund
               ice time, game jerseys, protective equipment, tournament travel, and community events
-              for service-connected disabled veterans across New Jersey.
+              for veterans across New Jersey.
             </p>
 
             <div className="pt-2 flex flex-wrap items-center gap-3">
@@ -242,15 +243,12 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
                   )}
 
                   {sp.logoUrl && (
-                    <div className="w-full pt-2 border-t border-white/[0.06]">
-                      <img
-                        src={sp.logoUrl}
-                        alt={sp.name || 'Sponsor Logo'}
-                        onError={onImageError}
-                        className="h-40 sm:h-48 w-full object-contain rounded-xl bg-black/40 p-3 border border-white/10"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
+                    <SheetImage
+                      src={sp.logoUrl}
+                      alt={sp.name || 'Sponsor Logo'}
+                      wrapperClassName="w-full pt-2 border-t border-white/[0.06]"
+                      className="h-40 sm:h-48 w-full object-contain rounded-xl bg-black/40 p-3 border border-white/10"
+                    />
                   )}
                 </article>
               );
@@ -289,7 +287,7 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
               Zero Cost to Players
             </h3>
             <p className="text-xs text-neutral-300 leading-relaxed">
-              Sponsorship contributions directly reduce out-of-pocket costs so NJ disabled veterans
+              Sponsorship contributions directly reduce out-of-pocket costs so NJ veterans
               can focus on recovery, team bonding, and hockey.
             </p>
           </div>
@@ -315,7 +313,7 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
               Veteran-Run Organization
             </h3>
             <p className="text-xs text-neutral-300 leading-relaxed">
-              Garden State Warriors Disabled Veterans Hockey Club Inc. is a registered 501(c)(3)
+              Garden State Warriors Veterans Hockey Club Inc. is a registered 501(c)(3)
               nonprofit run by veterans for veterans.
             </p>
           </div>

@@ -12,6 +12,7 @@ import {
   normalizeWebsiteUrl,
   normalizeSheetImageUrl,
   splitMediaUrlsCell,
+  mergeDynamicSyncResults,
 } from './rosterLogic.ts';
 import {
   validateWarriorApplicationInput,
@@ -64,6 +65,7 @@ test('parseSheetRowsToPlayers matches exact spaced headers from Garden_State_War
     'Experience',
     'Phone',
     'Email',
+    'Profile Picture',
   ]);
 
   const rows = [
@@ -89,14 +91,17 @@ test('parseSheetRowsToPlayers matches exact spaced headers from Garden_State_War
       '10 years travel and college club hockey.',
       '(973) 555-0100',
       'jmiller@example.com',
+      'https://example.com/profile-pic.jpg',
     ],
-    // Partial row with only First Name filled
-    ['', 'Alex', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    // Partial row with only First Name and Profile Picture filled (no JerseyPhotoUrl yet)
+    ['', 'Alex', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'https://example.com/alex-profile.jpg'],
   ];
 
   const players = parseSheetRowsToPlayers(rows, 'Sheet1');
   assert.equal(players.length, 2);
   assert.equal(players[0].name, 'James Miller');
+  assert.equal(players[0].jerseyPhotoUrl, 'https://example.com/jersey.jpg');
+  assert.equal(players[0].profilePictureUrl, 'https://example.com/profile-pic.jpg');
   assert.equal(players[0].whatWarriorsMeans, 'Verified WhatWarriorMeans testimony.');
   assert.equal(players[0].preferredContact, 'Text, Email');
   assert.equal(players[0].questionsInfo, 'Available for all tournaments.');
@@ -105,6 +110,8 @@ test('parseSheetRowsToPlayers matches exact spaced headers from Garden_State_War
   assert.equal(players[0].email, 'jmiller@example.com');
   assert.equal(players[0].roleBadge, 'Captain');
   assert.equal(players[1].name, 'Alex');
+  assert.equal(players[1].jerseyPhotoUrl, undefined);
+  assert.equal(players[1].profilePictureUrl, 'https://example.com/alex-profile.jpg');
 });
 
 test('parseAppsScriptPayload returns empty arrays when sheet only has header row so temporary placeholders are shown', () => {
@@ -344,4 +351,87 @@ test('formatReplaceTag formats missing media and text instructions accurately', 
     '[Replace with team photos from their social media page(s) - images]'
   );
 });
+
+test('parseAppsScriptPayload preserves Board and Staff bio captions including bracketed text from Google Sheets', () => {
+  const payload = {
+    title: 'Garden State Warriors Roster',
+    tabs: ['Board', 'Coaches'],
+    sheets: {
+      Board: [
+        ['Role', 'Name', 'Caption', 'PhotoUrl', 'Military Branch', 'Military Rank'],
+        ['President', 'Scott Dadain', '[Bio Inserted Here]', 'https://drive.google.com/file/d/1w7k-6g7ck2bCFvySTVrLTYfti5J6O56r/view', 'Navy', ''],
+        ['Treasurer', 'Matthew Burg', 'Dedicated veteran leader and treasurer.', 'https://drive.google.com/file/d/1HIYjjrhtQhuiPZoXxY91ee85G-1FlQMM/view', 'Air Force', 'SMSgt/E-8'],
+      ],
+      Coaches: [
+        ['Role', 'Name', 'Caption', 'PhotoUrl', 'Military Branch', 'Military Rank'],
+        ['Head Coach', '[Insert Name]', 'Head coaching bio caption.', 'https://drive.google.com/file/d/1w7k-6g7ck2bCFvySTVrLTYfti5J6O56r/view', 'Army', ''],
+      ],
+    },
+  };
+
+  const parsed = parseAppsScriptPayload(payload);
+  assert.equal(parsed.staff.length, 3);
+  const president = parsed.staff.find((s) => s.role === 'President');
+  assert.ok(president);
+  assert.equal(president.name, 'Scott Dadain');
+  assert.equal(president.caption, '[Bio Inserted Here]');
+  assert.equal(president.branchOrBackground, 'Navy');
+
+  const treasurer = parsed.staff.find((s) => s.role === 'Treasurer');
+  assert.ok(treasurer);
+  assert.equal(treasurer.caption, 'Dedicated veteran leader and treasurer.');
+  assert.equal(treasurer.rank, 'SMSgt/E-8');
+
+  const coach = parsed.staff.find((s) => s.category === 'Coach');
+  assert.ok(coach);
+  assert.equal(coach.name, '[Insert Name]');
+  assert.equal(coach.caption, 'Head coaching bio caption.');
+});
+
+test('mergeDynamicSyncResults preserves in-cell sheets-images-rt URLs across Apps Script timeouts and duplicate names without resurrecting deleted rows', () => {
+  const gvizRes = parseAppsScriptPayload({
+    sheets: {
+      'Garden State Warriors Roster': [
+        [...EXACT_SHEET_HEADERS],
+        ['Smith', 'John', '11', 'F', '', 'Army', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+        ['Smith', 'John', '22', 'D', '', 'Navy', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ],
+      Sponsors: [
+        ['Verified', 'Timestamp', 'Submitted', 'Name', 'Phone', 'Email', 'Preferred Contact', 'Website', 'Message', 'LogoUrl', 'Tier'],
+        ['TRUE', '11/5/2026', '11/5/2026', 'Sponsor Five', '', '', 'Email', '', 'Support!', '', ''],
+      ],
+    },
+  });
+
+  const appsScriptRes = parseAppsScriptPayload({
+    sheets: {
+      'Garden State Warriors Roster': [
+        [...EXACT_SHEET_HEADERS],
+        ['Smith', 'John', '11', 'F', '', 'Army', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'https://docs.google.com/sheets-images-rt/john11'],
+        ['Smith', 'John', '22', 'D', '', 'Navy', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'https://docs.google.com/sheets-images-rt/john22'],
+        ['Deleted', 'Player', '99', 'G', '', 'USMC', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'https://docs.google.com/sheets-images-rt/deleted99'],
+      ],
+      Sponsors: [
+        ['Verified', 'Timestamp', 'Submitted', 'Name', 'Phone', 'Email', 'Preferred Contact', 'Website', 'Message', 'LogoUrl', 'Tier'],
+        ['TRUE', '11/5/2026', '11/5/2026', 'Sponsor Five', '', '', 'Email', '', 'Support!', 'https://docs.google.com/sheets-images-rt/sponsor5', ''],
+      ],
+    },
+  });
+
+  const merged = mergeDynamicSyncResults(appsScriptRes, gvizRes);
+  assert.ok(merged);
+  assert.equal(merged.players.length, 2, 'Deleted player absent from gviz should not be resurrected');
+  assert.equal(merged.players[0].profilePictureUrl, 'https://docs.google.com/sheets-images-rt/john11');
+  assert.equal(merged.players[1].profilePictureUrl, 'https://docs.google.com/sheets-images-rt/john22');
+  assert.equal(merged.sponsors[0].logoUrl, 'https://docs.google.com/sheets-images-rt/sponsor5');
+
+  // Simulate a temporary Apps Script timeout (appsScriptRes === null) with cached previous state
+  const timeoutMerged = mergeDynamicSyncResults(null, gvizRes, merged);
+  assert.ok(timeoutMerged);
+  assert.equal(timeoutMerged.players[0].profilePictureUrl, 'https://docs.google.com/sheets-images-rt/john11');
+  assert.equal(timeoutMerged.players[1].profilePictureUrl, 'https://docs.google.com/sheets-images-rt/john22');
+  assert.equal(timeoutMerged.sponsors[0].logoUrl, 'https://docs.google.com/sheets-images-rt/sponsor5');
+});
+
+
 

@@ -354,6 +354,11 @@ export async function uploadMultipleImagesToFirebase(
   };
 }
 
+export function getCachedFirebaseAssetUrl(assetId: string): string | null {
+  if (!assetId) return null;
+  return firebaseAssetUrlCache.get(assetId) || null;
+}
+
 /**
  * Fetches an uploaded image 100% client-side directly from the Firebase server by assetId
  * using the client Firebase SDK (`getDoc(doc(db, 'sponsor_assets', assetId))`).
@@ -393,6 +398,16 @@ export async function resolveFirebaseAssetDirect(assetId: string): Promise<strin
 }
 
 /**
+ * Pre-warms any Firebase asset URL in memory so SheetImage renders immediately without mutating canonical URLs.
+ */
+export async function prewarmFirebaseImageUrl(rawUrl?: string): Promise<void> {
+  if (!rawUrl) return;
+  const assetId = extractFirebaseAssetId(rawUrl);
+  if (!assetId) return;
+  await resolveFirebaseAssetDirect(assetId);
+}
+
+/**
  * If a URL from Google Sheets is a Firebase asset URL (`/api/firebase-image?id=<assetId>` or
  * `firestore.googleapis.com/.../sponsor_assets/<assetId>`), resolves it 100% client-side
  * via the Firebase SDK so no server is required to display the image.
@@ -404,3 +419,4 @@ export async function resolveSheetUrlIfFirebase(rawUrl?: string): Promise<string
   const resolved = await resolveFirebaseAssetDirect(assetId);
   return resolved || rawUrl;
 }
+

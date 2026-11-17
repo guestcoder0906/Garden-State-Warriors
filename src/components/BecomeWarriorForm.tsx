@@ -141,7 +141,7 @@ export const BecomeWarriorForm: React.FC<{ onSubmitted?: () => void }> = ({ onSu
             <p className="text-sm text-neutral-300 max-w-2xl leading-relaxed">
               Becoming a Warrior is a unique privilege for our fellow veterans to be part of
               something special after serving our nation. Our roster is strictly for verified
-              disabled U.S. military veterans and club leadership.
+              U.S. military veterans and club leadership.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">

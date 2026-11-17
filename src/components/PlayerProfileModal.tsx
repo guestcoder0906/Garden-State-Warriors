@@ -1,7 +1,8 @@
-import React from 'react';
-import { X, Shield, Film, Image as ImageIcon, ExternalLink } from 'lucide-react';
-import { PlayerProfile, formatReplaceTag } from '../utils/rosterLogic';
+import React, { useEffect, useState } from 'react';
+import { X, Film, ExternalLink } from 'lucide-react';
+import { PlayerProfile } from '../utils/rosterLogic';
 import { TEAM_LOGOS, SOCIAL_LINKS } from '../data/seedData';
+import { SheetImage } from './SheetImage';
 
 interface PlayerProfileModalProps {
   player: PlayerProfile | null;
@@ -12,6 +13,16 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   player,
   onClose,
 }) => {
+  const [jerseyFailed, setJerseyFailed] = useState(false);
+  const [profileFailed, setProfileFailed] = useState(false);
+  const [militaryFailed, setMilitaryFailed] = useState(false);
+
+  useEffect(() => {
+    setJerseyFailed(false);
+    setProfileFailed(false);
+    setMilitaryFailed(false);
+  }, [player?.id, player?.jerseyPhotoUrl, player?.profilePictureUrl, player?.militaryPhotoUrl]);
+
   if (!player) return null;
 
   const hasVal = (v?: string) => {
@@ -41,9 +52,11 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
     showPositionOrRankBox ||
     showEraOrHometownBox;
 
-  const showJerseyPhoto = hasVal(player.jerseyPhotoUrl);
-  const showMilitaryPhoto = hasVal(player.militaryPhotoUrl);
-  const showAnyPhoto = showJerseyPhoto || showMilitaryPhoto;
+  const showJerseyPhoto = hasVal(player.jerseyPhotoUrl) && !jerseyFailed;
+  const showProfilePicture = hasVal(player.profilePictureUrl) && !profileFailed;
+  const showMilitaryPhoto = hasVal(player.militaryPhotoUrl) && !militaryFailed;
+  const photoCount = [showJerseyPhoto, showProfilePicture, showMilitaryPhoto].filter(Boolean).length;
+  const showAnyPhoto = photoCount > 0;
 
   const showBio = hasVal(player.bio);
   const showMeaning = hasVal(player.whatWarriorsMeans);
@@ -197,23 +210,29 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             </div>
           )}
 
-          {/* Photo Section: Only renders Jersey Photo and/or Military Photo when their URL cells are non-empty */}
+          {/* Photo Section: Shows Jersey Photo first, Profile Picture (as main if Jersey not provided yet, or second if both provided), and Military Photo */}
           {showAnyPhoto && (
             <div
               className={`grid grid-cols-1 ${
-                showJerseyPhoto && showMilitaryPhoto ? 'sm:grid-cols-2' : 'max-w-md mx-auto'
+                photoCount === 3
+                  ? 'sm:grid-cols-3'
+                  : photoCount === 2
+                  ? 'sm:grid-cols-2'
+                  : 'max-w-md mx-auto'
               } gap-5`}
             >
               {showJerseyPhoto && (
                 <div className="bg-[#101914] border border-white/10 rounded-xl overflow-hidden flex flex-col">
-                  <div className="relative aspect-square w-full bg-[#090F0B] flex items-center justify-center overflow-hidden">
-                    <img
-                      src={player.jerseyPhotoUrl}
-                      alt={player.name ? `${player.name} Jersey Portrait` : 'Jersey Portrait'}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
+                  <SheetImage
+                    src={player.jerseyPhotoUrl}
+                    alt={player.name ? `${player.name} Jersey Portrait` : 'Jersey Portrait'}
+                    wrapperClassName="aspect-square w-full bg-[#090F0B] flex items-center justify-center overflow-hidden"
+                    className="w-full h-full object-cover"
+                    hideWhenBroken={false}
+                    onStatusChange={(s) => {
+                      if (s === 'error') setJerseyFailed(true);
+                    }}
+                  />
                   <div className="px-4 py-2.5 bg-black/40 border-t border-white/10 flex items-center justify-between text-xs text-neutral-300">
                     <span>Garden State Warriors Uniform</span>
                     <span className="font-mono-tabular text-[#EAB308]">
@@ -228,16 +247,39 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                 </div>
               )}
 
+              {showProfilePicture && (
+                <div className="bg-[#101914] border border-white/10 rounded-xl overflow-hidden flex flex-col">
+                  <SheetImage
+                    src={player.profilePictureUrl}
+                    alt={player.name ? `${player.name} Profile Picture` : 'Profile Picture'}
+                    wrapperClassName="aspect-square w-full bg-[#090F0B] flex items-center justify-center overflow-hidden"
+                    className="w-full h-full object-cover"
+                    hideWhenBroken={false}
+                    onStatusChange={(s) => {
+                      if (s === 'error') setProfileFailed(true);
+                    }}
+                  />
+                  <div className="px-4 py-2.5 bg-black/40 border-t border-white/10 flex items-center justify-between text-xs text-neutral-300">
+                    <span>Profile Picture</span>
+                    {hasVal(player.name) && (
+                      <span className="font-mono-tabular text-neutral-400">{player.name}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {showMilitaryPhoto && (
                 <div className="bg-[#101914] border border-white/10 rounded-xl overflow-hidden flex flex-col">
-                  <div className="relative aspect-square w-full bg-[#090F0B] flex items-center justify-center overflow-hidden">
-                    <img
-                      src={player.militaryPhotoUrl}
-                      alt={player.name ? `${player.name} Military Service` : 'Military Service'}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
+                  <SheetImage
+                    src={player.militaryPhotoUrl}
+                    alt={player.name ? `${player.name} Military Service` : 'Military Service'}
+                    wrapperClassName="aspect-square w-full bg-[#090F0B] flex items-center justify-center overflow-hidden"
+                    className="w-full h-full object-cover"
+                    hideWhenBroken={false}
+                    onStatusChange={(s) => {
+                      if (s === 'error') setMilitaryFailed(true);
+                    }}
+                  />
                   <div className="px-4 py-2.5 bg-black/40 border-t border-white/10 flex items-center justify-between text-xs text-neutral-300">
                     <span>Military Service Photo</span>
                     {(hasVal(player.rank) || hasVal(player.branch)) && (
@@ -314,11 +356,11 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <img
+                        <SheetImage
                           src={media.url}
                           alt={media.caption}
+                          wrapperClassName="w-full h-full overflow-hidden"
                           className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
                         />
                       )}
                     </div>
@@ -345,7 +387,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               />
               <div>
                 <p className="text-xs font-bold text-white font-display uppercase">
-                  Garden State Warriors Disabled Veterans Hockey Club
+                  Garden State Warriors Veterans Hockey Club
                 </p>
                 <p className="text-[11px] text-neutral-400">
                   Registered 501(c)(3) Tax-Exempt Public Charity
