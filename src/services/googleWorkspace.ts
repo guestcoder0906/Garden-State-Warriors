@@ -9,6 +9,7 @@ import {
   extractSpreadsheetId,
   parseAppsScriptPayload,
   mergeDynamicSyncResults,
+  getEventCanonicalKey,
 } from '../utils/rosterLogic';
 import {
   uploadSponsorImageToFirebase,
@@ -19,6 +20,8 @@ export type { DynamicSyncResult };
 export { mergeDynamicSyncResults };
 
 const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v11';
+const KNOWN_EVENTS_STORAGE_KEY = 'gsw_known_active_events_v1';
+const PAST_EVENTS_ARCHIVE_STORAGE_KEY = 'gsw_past_events_archive_v1';
 const LEGACY_CACHE_KEYS = [
   'gsw_verified_sheet_cache_v1',
   'gsw_verified_sheet_cache_v2',
@@ -61,6 +64,10 @@ function sanitizeSyncResultUrls(result: DynamicSyncResult): DynamicSyncResult {
       ...ev,
       imageUrl: stripBlobUrl(ev.imageUrl),
     })),
+    pastEvents: (result.pastEvents || []).map((ev) => ({
+      ...ev,
+      imageUrl: stripBlobUrl(ev.imageUrl),
+    })),
     fans: (result.fans || []).map((fn) => ({
       ...fn,
       photoUrl: stripBlobUrl(fn.photoUrl),
@@ -70,6 +77,86 @@ function sanitizeSyncResultUrls(result: DynamicSyncResult): DynamicSyncResult {
       logoUrl: stripBlobUrl(sp.logoUrl),
     })),
   };
+}
+
+function readEventListFromStorage(key: string): ClubEvent[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.map((ev: ClubEvent) => ({ ...ev, imageUrl: stripBlobUrl(ev.imageUrl) }))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeEventListToStorage(key: string, list: ClubEvent[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const clean = list.map((ev) => ({ ...ev, imageUrl: stripBlobUrl(ev.imageUrl) }));
+    window.localStorage.setItem(key, JSON.stringify(clean));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+/**
+ * Tracks events that were previously present in the Google Sheet `Events` tab and later removed/deleted,
+ * merging them with server-returned `pastEvents` so the Events page always retains recent Past Events.
+ */
+function reconcileDeletedAndPastEvents(result: DynamicSyncResult): ClubEvent[] {
+  const archivedMap = new Map<string, ClubEvent>();
+  const addArchived = (ev: ClubEvent) => {
+    const key = getEventCanonicalKey(ev) || ev.id;
+    if (!key) return;
+    const prev = archivedMap.get(key);
+    archivedMap.set(key, {
+      ...(prev || {}),
+      ...ev,
+      imageUrl: stripBlobUrl(ev.imageUrl) || prev?.imageUrl,
+      isPast: true,
+      archivedAt: ev.archivedAt || prev?.archivedAt || new Date().toISOString(),
+    });
+  };
+
+  readEventListFromStorage(PAST_EVENTS_ARCHIVE_STORAGE_KEY).forEach(addArchived);
+  (result.pastEvents || []).forEach(addArchived);
+
+  if (result.eventsTabPresent) {
+    const currentKeys = new Set(
+      (result.events || []).map((ev) => getEventCanonicalKey(ev) || ev.id).filter(Boolean)
+    );
+    const prevKnown = readEventListFromStorage(KNOWN_EVENTS_STORAGE_KEY);
+    const nowIso = new Date().toISOString();
+
+    for (const oldEv of prevKnown) {
+      const oldKey = getEventCanonicalKey(oldEv) || oldEv.id;
+      if (oldKey && !currentKeys.has(oldKey)) {
+        addArchived({
+          ...oldEv,
+          isPast: true,
+          archivedAt: oldEv.archivedAt || nowIso,
+        });
+      }
+    }
+
+    // If an event is re-added as active/upcoming in the sheet, remove from archived deleted list
+    for (const activeEv of result.events || []) {
+      const key = getEventCanonicalKey(activeEv) || activeEv.id;
+      if (key && !activeEv.isPast) {
+        archivedMap.delete(key);
+      }
+    }
+
+    writeEventListToStorage(KNOWN_EVENTS_STORAGE_KEY, result.events || []);
+  }
+
+  const boundedArchive = Array.from(archivedMap.values()).slice(0, 20);
+  writeEventListToStorage(PAST_EVENTS_ARCHIVE_STORAGE_KEY, boundedArchive);
+  return boundedArchive;
 }
 
 /**
@@ -554,6 +641,7 @@ async function prewarmFirebaseImagesClientSide(result: DynamicSyncResult): Promi
     ...result.staff.flatMap((st) => [st.photoUrl, st.militaryPhotoUrl]),
     ...result.fans.map((fn) => fn.photoUrl),
     ...result.events.map((ev) => ev.imageUrl),
+    ...(result.pastEvents || []).map((ev) => ev.imageUrl),
     ...result.players.flatMap((pl) => [
       pl.jerseyPhotoUrl,
       pl.profilePictureUrl,
@@ -622,6 +710,7 @@ export async function syncVerifiedGoogleSheet(
     const merged = mergeDynamicSyncResults(appsScriptRes, gvizRes, existingCache);
 
     if (merged) {
+      merged.pastEvents = reconcileDeletedAndPastEvents(merged);
       await prewarmFirebaseImagesClientSide(merged);
       saveCachedSheetSyncResult(merged);
       return merged;

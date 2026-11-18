@@ -157,106 +157,6 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
         </div>
       </section>
 
-      {/* Active Verified Sponsors Directory */}
-      <section aria-labelledby="verified-sponsors-heading" className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-white/10 pb-4">
-          <div>
-            <span className="text-xs text-[#EAB308] font-mono-tabular uppercase tracking-wider">
-              Our Community Partners
-            </span>
-            <h2
-              id="verified-sponsors-heading"
-              className="text-2xl sm:text-3xl font-extrabold text-white font-display uppercase tracking-wide"
-            >
-              Thanks to Our Sponsors and Supporters
-            </h2>
-          </div>
-          {sponsors.length > 0 && (
-            <span className="text-xs text-neutral-400 font-mono-tabular">
-              {sponsors.length} {sponsors.length === 1 ? 'Verified Partner' : 'Verified Partners'}
-            </span>
-          )}
-        </div>
-
-        {isSheetLoading && sponsors.length === 0 && (
-          <div
-            aria-label="Loading Sponsors"
-            className="bg-[#0D1611] border border-white/10 rounded-2xl p-10 flex items-center justify-center gap-3 text-neutral-300"
-          >
-            <Loader2 className="w-6 h-6 text-[#EAB308] animate-spin" />
-            <span className="text-xs font-mono-tabular">Loading verified sponsors...</span>
-          </div>
-        )}
-
-        {!isSheetLoading && sponsors.length === 0 && (
-          <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-8 text-center space-y-3">
-            <Award className="w-8 h-8 text-[#EAB308] mx-auto" />
-            <h3 className="text-lg font-bold text-white font-display uppercase">
-              Be Among Our Featured Team Sponsors
-            </h3>
-            <p className="text-xs sm:text-sm text-neutral-300 max-w-lg mx-auto leading-relaxed">
-              Verified businesses, organizations, and community supporters appear here and on our
-              Home page. Submit the form below to partner with the Garden State Warriors.
-            </p>
-          </div>
-        )}
-
-        {sponsors.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {sponsors.map((sp) => {
-              const sponsorMsg = (sp.message || sp.description || '').trim();
-              const hasTextInfo = Boolean(sp.tier || sp.name || sponsorMsg || sp.website);
-              return (
-                <article
-                  key={sp.id}
-                  className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 flex flex-col justify-between gap-4"
-                >
-                  {hasTextInfo && (
-                    <div className="space-y-2">
-                      {sp.tier && (
-                        <span className="text-xs font-mono-tabular text-[#EAB308] font-bold uppercase tracking-wider block">
-                          {sp.tier}
-                        </span>
-                      )}
-                      {sp.name && (
-                        <h3 className="text-xl font-bold text-white font-display uppercase">
-                          {sp.name}
-                        </h3>
-                      )}
-                      {sponsorMsg && (
-                        <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed font-mono-tabular italic">
-                          <q>{sponsorMsg}</q>
-                        </p>
-                      )}
-                      {sp.website && (
-                        <a
-                          href={normalizeWebsiteUrl(sp.website)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#EAB308] hover:underline pt-1"
-                        >
-                          <span>Visit Website</span>
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                    </div>
-                  )}
-
-                  {sp.logoUrl && (
-                    <SheetImage
-                      src={sp.logoUrl}
-                      alt={sp.name || 'Sponsor Logo'}
-                      wrapperClassName="w-full pt-2 border-t border-white/[0.06]"
-                      className="h-40 sm:h-48 w-full object-contain rounded-xl bg-black/40 p-3 border border-white/10"
-                    />
-                  )}
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
       {/* Why Partner With Garden State Warriors */}
       <section className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 sm:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
@@ -598,6 +498,106 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
             {sponsorSubmitting ? 'Submitting Sponsor Info...' : 'Submit Sponsor Application'}
           </button>
         </form>
+      </section>
+
+      {/* Active Verified Sponsors Directory (At Bottom of Sponsors Page) */}
+      <section aria-labelledby="verified-sponsors-heading" className="space-y-6 pt-2">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-white/10 pb-4">
+          <div>
+            <span className="text-xs text-[#EAB308] font-mono-tabular uppercase tracking-wider">
+              Our Community Partners
+            </span>
+            <h2
+              id="verified-sponsors-heading"
+              className="text-2xl sm:text-3xl font-extrabold text-white font-display uppercase tracking-wide"
+            >
+              Thanks to Our Sponsors and Supporters
+            </h2>
+          </div>
+          {sponsors.length > 0 && (
+            <span className="text-xs text-neutral-400 font-mono-tabular">
+              {sponsors.length} {sponsors.length === 1 ? 'Verified Partner' : 'Verified Partners'}
+            </span>
+          )}
+        </div>
+
+        {isSheetLoading && sponsors.length === 0 && (
+          <div
+            aria-label="Loading Sponsors"
+            className="bg-[#0D1611] border border-white/10 rounded-2xl p-10 flex items-center justify-center gap-3 text-neutral-300"
+          >
+            <Loader2 className="w-6 h-6 text-[#EAB308] animate-spin" />
+            <span className="text-xs font-mono-tabular">Loading verified sponsors...</span>
+          </div>
+        )}
+
+        {!isSheetLoading && sponsors.length === 0 && (
+          <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-8 text-center space-y-3">
+            <Award className="w-8 h-8 text-[#EAB308] mx-auto" />
+            <h3 className="text-lg font-bold text-white font-display uppercase">
+              Be Among Our Featured Team Sponsors
+            </h3>
+            <p className="text-xs sm:text-sm text-neutral-300 max-w-lg mx-auto leading-relaxed">
+              Verified businesses, organizations, and community supporters appear here and on our
+              Home page. Submit the form above to partner with the Garden State Warriors.
+            </p>
+          </div>
+        )}
+
+        {sponsors.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            {sponsors.map((sp) => {
+              const sponsorMsg = (sp.message || sp.description || '').trim();
+              const hasTextInfo = Boolean(sp.tier || sp.name || sponsorMsg || sp.website);
+              return (
+                <article
+                  key={sp.id}
+                  className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 flex flex-col justify-between gap-4"
+                >
+                  {hasTextInfo && (
+                    <div className="space-y-2">
+                      {sp.tier && (
+                        <span className="text-xs font-mono-tabular text-[#EAB308] font-bold uppercase tracking-wider block">
+                          {sp.tier}
+                        </span>
+                      )}
+                      {sp.name && (
+                        <h3 className="text-xl font-bold text-white font-display uppercase">
+                          {sp.name}
+                        </h3>
+                      )}
+                      {sponsorMsg && (
+                        <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed font-mono-tabular italic">
+                          <q>{sponsorMsg}</q>
+                        </p>
+                      )}
+                      {sp.website && (
+                        <a
+                          href={normalizeWebsiteUrl(sp.website)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#EAB308] hover:underline pt-1"
+                        >
+                          <span>Visit Website</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {sp.logoUrl && (
+                    <SheetImage
+                      src={sp.logoUrl}
+                      alt={sp.name || 'Sponsor Logo'}
+                      wrapperClassName="w-full pt-2 border-t border-white/[0.06]"
+                      className="h-40 sm:h-48 w-full object-contain rounded-xl bg-black/40 p-3 border border-white/10"
+                    />
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
     </div>
   );

@@ -25,6 +25,7 @@ import {
   formatReplaceTag,
   isValidWebsiteUrl,
   normalizeWebsiteUrl,
+  splitAndSortEvents,
 } from './utils/rosterLogic';
 import {
   TEAM_LOGOS,
@@ -101,6 +102,7 @@ export default function App() {
   const [fans, setFans] = useState<FanItem[]>(() => initialCache?.fans || []);
   const [sponsors, setSponsors] = useState<SponsorItem[]>(() => initialCache?.sponsors || []);
   const [events, setEvents] = useState<ClubEvent[]>(() => initialCache?.events || []);
+  const [pastEvents, setPastEvents] = useState<ClubEvent[]>(() => initialCache?.pastEvents || []);
   const [dynamicTabs, setDynamicTabs] = useState<string[]>(() => initialCache?.detectedTabs || []);
   const [isSheetLoading, setIsSheetLoading] = useState<boolean>(() => !initialCache);
 
@@ -356,6 +358,7 @@ export default function App() {
       });
       setStaff(sheetData.staff);
       setEvents(sheetData.events);
+      setPastEvents(sheetData.pastEvents || []);
       setFans(sheetData.fans || []);
       setSponsors(sheetData.sponsors || []);
       setDynamicTabs(sheetData.detectedTabs);
@@ -418,6 +421,11 @@ export default function App() {
     );
     return vals.length > 0 ? ['All', ...vals] : [];
   }, [players]);
+
+  const { upcoming: upcomingEvents, past: pastEventsList } = useMemo(
+    () => splitAndSortEvents(events, pastEvents),
+    [events, pastEvents]
+  );
 
   const filteredPlayers = useMemo(() => {
     return filterPlayers(players, {
@@ -1830,111 +1838,218 @@ export default function App() {
         )}
 
         {/* ===================================================================
-            3. EVENTS & SOCIAL MEDIA POSTS SECTION
-               - Scrollable Live Viewing iFrames for Instagram & Facebook (No API Key Needed)
-               - Event Listings only rendered when Events tab in Google Sheets has rows
+            3. EVENTS PAGE
+               - Splits sheet events into "Upcoming Events" and "Past Events" (deleted/past, max 3)
+               - Media links / social feeds live exclusively on the Media tab
            =================================================================== */}
         {activeSection === 'events' && (
-          <div className="space-y-10">
+          <div className="max-w-4xl mx-auto space-y-10">
             <div className="text-center max-w-2xl mx-auto space-y-2">
               <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
-                Live Social Media Posts & Events
+                Team Schedule & Appearances
               </span>
               <h1 className="text-3xl sm:text-4xl font-extrabold text-white font-display uppercase tracking-wide">
-                Events & Social Media Feed
+                Garden State Warriors Events
               </h1>
               <p className="text-xs sm:text-sm text-neutral-300">
-                Scroll through live up-to-date posts and events directly from{' '}
-                <span className="text-[#EAB308] font-mono-tabular">
-                  {SOCIAL_LINKS.instagramHandle}
-                </span>{' '}
-                and Facebook below.
+                Upcoming games, tournaments, and community appearances, followed by recent past
+                events.
               </p>
             </div>
 
-            {/* Live Scrollable Social Media Viewing iFrames (Instagram + Facebook) */}
-            {renderLiveSocialViewingGrid()}
-
-            {/* Event Entries (Shows loading spinner while loading; only rendered when Events tab has rows) */}
-            {isSheetLoading && events.length === 0 && (
+            {isSheetLoading && upcomingEvents.length === 0 && pastEventsList.length === 0 && (
               <div
                 aria-label="Loading Event Listings"
-                className="max-w-3xl mx-auto bg-[#0D1611] border border-white/10 rounded-2xl p-8 flex items-center justify-center gap-3 text-neutral-300"
+                className="bg-[#0D1611] border border-white/10 rounded-2xl p-8 flex items-center justify-center gap-3 text-neutral-300"
               >
                 <Loader2 className="w-5 h-5 text-[#EAB308] animate-spin" />
                 <span className="text-xs font-mono-tabular">Loading Event Listings...</span>
               </div>
             )}
-            {events.length > 0 && (
-              <div className="max-w-3xl mx-auto space-y-4 pt-4 border-t border-white/10">
-                <h2 className="text-xl sm:text-2xl font-bold text-[#EAB308] font-display uppercase tracking-wide text-center">
-                  Event Listings
-                </h2>
-                {events.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className="bg-[#111915] border border-white/10 rounded-2xl overflow-hidden shadow-lg"
+
+            {/* 1. UPCOMING EVENTS */}
+            <section aria-labelledby="upcoming-events-heading" className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-white/10 pb-3">
+                <div>
+                  <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider block">
+                    On the Calendar
+                  </span>
+                  <h2
+                    id="upcoming-events-heading"
+                    className="text-xl sm:text-2xl font-bold text-white font-display uppercase tracking-wide"
                   >
-                    {(ev.imageUrl || ev.title || ev.date || ev.time || ev.location || ev.category) && (
-                      <div className="p-5 border-b border-white/10 flex items-center gap-4">
+                    Upcoming Events
+                  </h2>
+                </div>
+                {upcomingEvents.length > 0 && (
+                  <span className="text-xs text-neutral-400 font-mono-tabular">
+                    {upcomingEvents.length}{' '}
+                    {upcomingEvents.length === 1 ? 'Upcoming Event' : 'Upcoming Events'}
+                  </span>
+                )}
+              </div>
+
+              {upcomingEvents.length > 0 ? (
+                <div className="space-y-4">
+                  {upcomingEvents.map((ev) => (
+                    <article
+                      key={ev.id}
+                      className="bg-[#111915] border border-white/10 rounded-2xl overflow-hidden shadow-lg"
+                    >
+                      {(ev.imageUrl || ev.title || ev.date || ev.time || ev.location || ev.category) && (
+                        <div className="p-5 flex items-start sm:items-center gap-4">
+                          {ev.imageUrl && (
+                            <SheetImage
+                              src={ev.imageUrl}
+                              alt={ev.title || 'Upcoming Event'}
+                              wrapperClassName="w-16 h-16 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden"
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                          <div className="space-y-1 min-w-0">
+                            {(ev.category || ev.date || ev.time) && (
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono-tabular">
+                                {ev.category && (
+                                  <span className="text-[#EAB308] uppercase font-bold">
+                                    {ev.category}
+                                  </span>
+                                )}
+                                {ev.category && (ev.date || ev.time) && (
+                                  <span className="text-neutral-600" aria-hidden="true">
+                                    ·
+                                  </span>
+                                )}
+                                {(ev.date || ev.time) && (
+                                  <span className="text-neutral-300">
+                                    {[ev.date, ev.time].filter(Boolean).join(' · ')}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {ev.title && (
+                              <h3 className="text-base sm:text-lg font-bold text-white font-display uppercase tracking-wide">
+                                {ev.title}
+                              </h3>
+                            )}
+                            {ev.location && (
+                              <p className="text-xs text-[#EAB308] flex items-center gap-1 font-mono-tabular">
+                                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                                <span>{ev.location}</span>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {(ev.description || ev.externalUrl) && (
+                        <div className="px-5 pb-5 pt-3 border-t border-white/10 space-y-3">
+                          {ev.description && (
+                            <p className="text-xs sm:text-sm text-neutral-200 leading-relaxed font-mono-tabular">
+                              {ev.description}
+                            </p>
+                          )}
+                          {ev.externalUrl && (
+                            <a
+                              href={ev.externalUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#EAB308] hover:underline"
+                            >
+                              <span>Event Details</span>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                !isSheetLoading && (
+                  <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 text-center text-xs sm:text-sm text-neutral-300 font-mono-tabular">
+                    No upcoming events are currently scheduled. Check back soon for upcoming games,
+                    tournaments, and team appearances.
+                  </div>
+                )
+              )}
+            </section>
+
+            {/* 2. PAST EVENTS (Top 3 most recent past or deleted events) */}
+            <section aria-labelledby="past-events-heading" className="space-y-4 pt-2">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-white/10 pb-3">
+                <div>
+                  <span className="text-[11px] text-neutral-400 font-mono-tabular uppercase tracking-wider block">
+                    Recent History
+                  </span>
+                  <h2
+                    id="past-events-heading"
+                    className="text-xl sm:text-2xl font-bold text-neutral-100 font-display uppercase tracking-wide"
+                  >
+                    Past Events
+                  </h2>
+                </div>
+                {pastEventsList.length > 0 && (
+                  <span className="text-xs text-neutral-400 font-mono-tabular">
+                    Showing {pastEventsList.length} most recent
+                  </span>
+                )}
+              </div>
+
+              {pastEventsList.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {pastEventsList.map((ev) => (
+                    <article
+                      key={ev.id}
+                      className="bg-[#0C130F] border border-white/[0.08] rounded-2xl p-5 flex flex-col justify-between gap-3"
+                    >
+                      <div className="space-y-2">
                         {ev.imageUrl && (
                           <SheetImage
                             src={ev.imageUrl}
-                            alt={ev.title || 'Event'}
-                            wrapperClassName="w-16 h-16 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden"
-                            className="w-full h-full object-cover"
+                            alt={ev.title || 'Past Event'}
+                            wrapperClassName="w-full h-32 rounded-xl bg-black/40 border border-white/10 overflow-hidden mb-1"
+                            className="w-full h-full object-cover opacity-90"
                           />
                         )}
-                        <div className="space-y-1">
-                          {ev.category && (
-                            <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase">
-                              {ev.category}
-                            </span>
-                          )}
-                          {ev.title && (
-                            <h3 className="text-base sm:text-lg font-bold text-white font-mono-tabular">
-                              {ev.title}
-                            </h3>
-                          )}
-                          {(ev.date || ev.time) && (
-                            <p className="text-xs text-neutral-400 font-mono-tabular">
-                              {[ev.date, ev.time].filter(Boolean).join(' · ')}
-                            </p>
-                          )}
-                          {ev.location && (
-                            <p className="text-xs text-[#EAB308] flex items-center gap-1 font-mono-tabular">
-                              <MapPin className="w-3.5 h-3.5" />
-                              <span>{ev.location}</span>
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {(ev.description || ev.externalUrl) && (
-                      <div className="p-5 space-y-3">
+                        {(ev.category || ev.date) && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-400 font-mono-tabular">
+                            {ev.category && (
+                              <span className="text-[#EAB308]/90 uppercase font-semibold">
+                                {ev.category}
+                              </span>
+                            )}
+                            {ev.category && ev.date && <span aria-hidden="true">·</span>}
+                            {ev.date && <span>{ev.date}</span>}
+                          </div>
+                        )}
+                        {ev.title && (
+                          <h3 className="text-base font-bold text-white font-display uppercase tracking-wide">
+                            {ev.title}
+                          </h3>
+                        )}
+                        {ev.location && (
+                          <p className="text-xs text-neutral-300 flex items-center gap-1 font-mono-tabular">
+                            <MapPin className="w-3.5 h-3.5 text-[#EAB308]/80 shrink-0" />
+                            <span>{ev.location}</span>
+                          </p>
+                        )}
                         {ev.description && (
-                          <p className="text-xs sm:text-sm text-neutral-200 leading-relaxed font-mono-tabular">
+                          <p className="text-xs text-neutral-400 leading-relaxed font-mono-tabular line-clamp-3">
                             {ev.description}
                           </p>
                         )}
-                        {ev.externalUrl && (
-                          <a
-                            href={ev.externalUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#EAB308] hover:underline"
-                          >
-                            <span>View Event Link</span>
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
-                        )}
                       </div>
-                    )}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                !isSheetLoading && (
+                  <div className="bg-[#0C130F] border border-white/[0.08] rounded-2xl p-6 text-center text-xs sm:text-sm text-neutral-400 font-mono-tabular">
+                    No past events recorded yet.
                   </div>
-                ))}
-              </div>
-            )}
+                )
+              )}
+            </section>
           </div>
         )}
 

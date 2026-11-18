@@ -13,6 +13,9 @@ import {
   normalizeSheetImageUrl,
   splitMediaUrlsCell,
   mergeDynamicSyncResults,
+  parseEventEndDate,
+  isEventPast,
+  splitAndSortEvents,
 } from './rosterLogic.ts';
 import {
   validateWarriorApplicationInput,
@@ -432,6 +435,54 @@ test('mergeDynamicSyncResults preserves in-cell sheets-images-rt URLs across App
   assert.equal(timeoutMerged.players[1].profilePictureUrl, 'https://docs.google.com/sheets-images-rt/john22');
   assert.equal(timeoutMerged.sponsors[0].logoUrl, 'https://docs.google.com/sheets-images-rt/sponsor5');
 });
+
+test('parseEventEndDate, isEventPast, and splitAndSortEvents separate Upcoming vs top-3 Past/Deleted events', () => {
+  const refNow = new Date(2026, 10, 18, 8, 0, 0); // Nov 18, 2026
+
+  const parsedApr = parseEventEndDate('22 APR - 25 APR', refNow);
+  assert.ok(parsedApr);
+  assert.equal(parsedApr.getFullYear(), 2026);
+  assert.equal(parsedApr.getMonth(), 3); // April
+  assert.equal(parsedApr.getDate(), 25);
+
+  const parsed = parseAppsScriptPayload({
+    sheets: {
+      Events: [
+        ['Title', 'Date', 'Time', 'Location', 'Category', 'Description', 'FlyerUrl', 'ExternalUrl', 'Status'],
+        ['USA Hockey National Warrior Tournament', '22 APR - 25 APR', '', 'Marlborough, MA', 'Tournament', '', '', '', ''],
+        ['Winter Classic Scrimmage', '12/12/2026', '7:00 PM', 'Mennen Arena', 'Game', 'Home ice scrimmage.', '', '', ''],
+        ['Summer Skate', '07/04/2026', '', 'Bridgewater, NJ', 'Practice', '', '', '', ''],
+        ['Fall Kickoff', '09/15/2026', '', 'Newark, NJ', 'Event', '', '', '', ''],
+        ['Deleted Flagged Event', '12/30/2026', '', 'Trenton, NJ', 'Event', '', '', '', 'Deleted'],
+      ],
+    },
+    pastEvents: [
+      {
+        id: 'archived-deleted-1',
+        title: 'Spring Charity Skate',
+        date: '03/10/2026',
+        location: 'Morristown, NJ',
+        category: 'Fundraiser',
+        description: 'Deleted from Events sheet after completion.',
+        archivedAt: '2026-10-01T12:00:00.000Z',
+        isPast: true,
+      },
+    ],
+  });
+
+  const { upcoming, past } = splitAndSortEvents(parsed.events, parsed.pastEvents, refNow, 3);
+  assert.equal(upcoming.length, 1);
+  assert.equal(upcoming[0].title, 'Winter Classic Scrimmage');
+  assert.equal(isEventPast(upcoming[0], refNow), false);
+
+  assert.equal(past.length, 3, 'Past Events should show at most 3 items');
+  // Most recent past events come first (12/30/2026 marked Deleted -> 09/15/2026 -> 07/04/2026)
+  assert.deepEqual(
+    past.map((e) => e.title),
+    ['Deleted Flagged Event', 'Fall Kickoff', 'Summer Skate']
+  );
+});
+
 
 
 

@@ -114,6 +114,9 @@ export interface ClubEvent {
   imageUrl?: string;
   placeholderBanner: string;
   externalUrl?: string;
+  status?: string;
+  isPast?: boolean;
+  archivedAt?: string;
   isPlaceholder?: boolean;
 }
 
@@ -582,11 +585,11 @@ export function parseSheetRowsToStaff(
 /**
  * Parses an "Events" tab from the Google Sheet, OR inline rows in the 15-column sheet where RosterTab is "Events".
  * Dedicated Events Tab Columns (all optional):
- * Title | Date | Time | Location | Category | Description | FlyerUrl | ExternalUrl
+ * Title | Date | Time | Location | Category | Description | FlyerUrl | ExternalUrl | Status
  */
 export function parseSheetRowsToEvents(
   rows: string[][],
-  mode: 'DedicatedTab' | 'InlineRosterTab' = 'DedicatedTab'
+  mode: 'DedicatedTab' | 'InlineRosterTab' | 'PastTab' = 'DedicatedTab'
 ): ClubEvent[] {
   if (!rows || rows.length < 2) return [];
   const normHeaders = rows[0].map(normalizeHeaderKey);
@@ -605,6 +608,7 @@ export function parseSheetRowsToEvents(
   const idxDesc = findCol(['description', 'details', 'bio', 'info']);
   const idxImg = findCol(['flyerurl', 'imageurl', 'photourl', 'flyer', 'image', 'photo', 'banner']);
   const idxUrl = findCol(['externalurl', 'url', 'link']);
+  const idxStatus = findCol(['status', 'state', 'eventstatus', 'archived']);
 
   const events: ClubEvent[] = [];
   for (let i = 1; i < rows.length; i++) {
@@ -626,8 +630,13 @@ export function parseSheetRowsToEvents(
     const description = getCell(idxDesc);
     const imageUrl = normalizeSheetImageUrl(getCell(idxImg)) || undefined;
     const externalUrl = getCell(idxUrl) || undefined;
+    const status = getCell(idxStatus) || undefined;
 
     if (!title && !date && !time && !location && !category && !description && !imageUrl) continue;
+
+    const markedPast =
+      mode === 'PastTab' ||
+      /\b(past|completed|archived|deleted|ended|finished)\b/i.test(`${status || ''} ${category}`);
 
     events.push({
       id: `sheet-event-${mode}-${i}`,
@@ -640,6 +649,8 @@ export function parseSheetRowsToEvents(
       imageUrl,
       placeholderBanner: '',
       externalUrl,
+      status,
+      isPast: markedPast || undefined,
       isPlaceholder: false,
     });
   }
@@ -835,12 +846,15 @@ export function parseAppsScriptPayload(payload: {
   board?: any[];
   coaches?: any[];
   events?: any[];
+  pastEvents?: any[];
   fans?: any[];
   sponsors?: any[];
 }): {
   players: PlayerProfile[];
   staff: StaffMember[];
   events: ClubEvent[];
+  pastEvents: ClubEvent[];
+  eventsTabPresent: boolean;
   fans: FanItem[];
   sponsors: SponsorItem[];
   detectedTabs: string[];
@@ -850,6 +864,7 @@ export function parseAppsScriptPayload(payload: {
   const allPlayers: PlayerProfile[] = [];
   const allStaff: StaffMember[] = [];
   const allEvents: ClubEvent[] = [];
+  const allPastEvents: ClubEvent[] = [];
   const allFans: FanItem[] = [];
   const allSponsors: SponsorItem[] = [];
   const playerTabsSet = new Set<string>();
@@ -862,6 +877,9 @@ export function parseAppsScriptPayload(payload: {
   );
   const hasDedicatedEventsSheet = tabNames.some((t) =>
     /^(events|event|schedule|calendar)$/i.test(t.trim())
+  );
+  const hasDedicatedPastEventsSheet = tabNames.some((t) =>
+    /^(past events|past_events|archived events|pastevents)$/i.test(t.trim())
   );
   const hasDedicatedFansSheet = tabNames.some((t) =>
     /^(fans|fan|fan wall|supporters|family)$/i.test(t.trim())
@@ -882,6 +900,8 @@ export function parseAppsScriptPayload(payload: {
       allStaff.push(...parseSheetRowsToStaff(rows, 'Board'));
     } else if (/^(coaches|coach|coaching|coaching staff)$/i.test(tabName.trim())) {
       allStaff.push(...parseSheetRowsToStaff(rows, 'Coach'));
+    } else if (/^(past events|past_events|archived events|pastevents)$/i.test(tabName.trim())) {
+      allPastEvents.push(...parseSheetRowsToEvents(rows, 'PastTab'));
     } else if (/^(events|event|schedule|calendar)$/i.test(tabName.trim())) {
       allEvents.push(...parseSheetRowsToEvents(rows, 'DedicatedTab'));
     } else if (/^(fans|fan|fan wall|supporters|family)$/i.test(tabName.trim())) {
@@ -1148,6 +1168,7 @@ export function parseAppsScriptPayload(payload: {
       const description = cleanSheetCell(ev.description);
       const imgCandidate = normalizeSheetImageUrl(ev.imageUrl || ev.flyerPlaceholder);
       const externalUrl = cleanSheetCell(ev.externalUrl);
+      const status = cleanSheetCell(ev.status);
       if (!title && !date && !location && !description && !imgCandidate) return;
       allEvents.push({
         id: ev.id || `as-event-${i}`,
@@ -1160,6 +1181,40 @@ export function parseAppsScriptPayload(payload: {
         imageUrl: imgCandidate || undefined,
         placeholderBanner: '',
         externalUrl: externalUrl || undefined,
+        status: status || undefined,
+        isPast: Boolean(ev.isPast) || undefined,
+        archivedAt: cleanSheetCell(ev.archivedAt) || undefined,
+        isPlaceholder: false,
+      });
+    });
+  }
+
+  if (Array.isArray(payload?.pastEvents)) {
+    payload.pastEvents.forEach((ev: any, i: number) => {
+      const title = cleanSheetCell(ev.title);
+      const date = cleanSheetCell(ev.date);
+      const time = cleanSheetCell(ev.time);
+      const location = cleanSheetCell(ev.location);
+      const category = cleanSheetCell(ev.category);
+      const description = cleanSheetCell(ev.description);
+      const imgCandidate = normalizeSheetImageUrl(ev.imageUrl || ev.flyerPlaceholder);
+      const externalUrl = cleanSheetCell(ev.externalUrl);
+      const status = cleanSheetCell(ev.status);
+      if (!title && !date && !location && !description && !imgCandidate) return;
+      allPastEvents.push({
+        id: ev.id || `as-past-event-${i}`,
+        title,
+        date,
+        time: time || undefined,
+        location,
+        category,
+        description,
+        imageUrl: imgCandidate || undefined,
+        placeholderBanner: '',
+        externalUrl: externalUrl || undefined,
+        status: status || undefined,
+        isPast: true,
+        archivedAt: cleanSheetCell(ev.archivedAt) || undefined,
         isPlaceholder: false,
       });
     });
@@ -1220,6 +1275,8 @@ export function parseAppsScriptPayload(payload: {
     players: allPlayers,
     staff: allStaff,
     events: allEvents,
+    pastEvents: allPastEvents,
+    eventsTabPresent: hasDedicatedEventsSheet || hasDedicatedPastEventsSheet || Array.isArray(payload?.events),
     fans: allFans,
     sponsors: allSponsors,
     detectedTabs: Array.from(playerTabsSet),
@@ -1272,6 +1329,8 @@ export interface DynamicSyncResult {
   players: PlayerProfile[];
   staff: StaffMember[];
   events: ClubEvent[];
+  pastEvents?: ClubEvent[];
+  eventsTabPresent?: boolean;
   fans: FanItem[];
   sponsors: SponsorItem[];
   detectedTabs: string[];
@@ -1426,13 +1485,292 @@ export function mergeDynamicSyncResults(
 
   const detectedTabs = Array.from(new Set([...g.detectedTabs, ...a.detectedTabs]));
 
+  // Merge server/archived pastEvents without ever putting deleted items back into active `events`
+  const mergedPastMap = new Map<string, ClubEvent>();
+  const addPastCandidate = (ev: ClubEvent) => {
+    const key = getEventCanonicalKey(ev);
+    if (!key) return;
+    const existing = mergedPastMap.get(key);
+    if (!existing) {
+      mergedPastMap.set(key, { ...ev, isPast: true });
+    } else {
+      mergedPastMap.set(key, {
+        ...existing,
+        ...ev,
+        imageUrl: ev.imageUrl || existing.imageUrl,
+        archivedAt: ev.archivedAt || existing.archivedAt,
+        isPast: true,
+      });
+    }
+  };
+  (g.pastEvents || []).forEach(addPastCandidate);
+  (a.pastEvents || []).forEach(addPastCandidate);
+
   return {
     players,
     staff,
     events,
+    pastEvents: Array.from(mergedPastMap.values()),
+    eventsTabPresent: Boolean(g.eventsTabPresent || a.eventsTabPresent),
     fans,
     sponsors,
     detectedTabs,
   };
 }
+
+const MONTH_INDEX_MAP: Record<string, number> = {
+  jan: 0,
+  january: 0,
+  feb: 1,
+  february: 1,
+  mar: 2,
+  march: 2,
+  apr: 3,
+  april: 3,
+  may: 4,
+  jun: 5,
+  june: 5,
+  jul: 6,
+  july: 6,
+  aug: 7,
+  august: 7,
+  sep: 8,
+  sept: 8,
+  september: 8,
+  oct: 9,
+  october: 9,
+  nov: 10,
+  november: 10,
+  dec: 11,
+  december: 11,
+};
+
+/**
+ * Normalizes an event into a canonical key (`title|date|location`) for deduplicating
+ * live and archived/deleted events across syncs.
+ */
+export function getEventCanonicalKey(ev: Pick<ClubEvent, 'title' | 'date' | 'location'>): string {
+  const title = (ev.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const date = (ev.date || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const location = (ev.location || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!title && !date && !location) return '';
+  return `${title}|${date}|${location}`;
+}
+
+function parseSingleEventDate(
+  part: string,
+  fallbackYear: number,
+  fallbackMonth?: number
+): Date | null {
+  const cleaned = part
+    .replace(/\b(\d+)(st|nd|rd|th)\b/gi, '$1')
+    .replace(/,/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return null;
+
+  // 1. YYYY-MM-DD
+  const isoMatch = cleaned.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (isoMatch) {
+    const y = Number(isoMatch[1]);
+    const m = Number(isoMatch[2]) - 1;
+    const d = Number(isoMatch[3]);
+    const dt = new Date(y, m, d);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+
+  // 2. MM/DD/YYYY or MM/DD/YY or MM/DD
+  const slashMatch = cleaned.match(/^(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?$/);
+  if (slashMatch) {
+    const m = Number(slashMatch[1]) - 1;
+    const d = Number(slashMatch[2]);
+    let y = fallbackYear;
+    if (slashMatch[3]) {
+      const rawY = Number(slashMatch[3]);
+      y = rawY < 100 ? 2000 + rawY : rawY;
+    }
+    const dt = new Date(y, m, d);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+
+  // 3. "25 APR", "25 APR 2026"
+  const dayMonthMatch = cleaned.match(/^(\d{1,2})\s+([a-zA-Z]+)(?:\s+(\d{2,4}))?$/);
+  if (dayMonthMatch) {
+    const d = Number(dayMonthMatch[1]);
+    const m = MONTH_INDEX_MAP[dayMonthMatch[2].toLowerCase()];
+    if (m !== undefined) {
+      let y = fallbackYear;
+      if (dayMonthMatch[3]) {
+        const rawY = Number(dayMonthMatch[3]);
+        y = rawY < 100 ? 2000 + rawY : rawY;
+      }
+      const dt = new Date(y, m, d);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+  }
+
+  // 4. "APR 25", "April 25 2026"
+  const monthDayMatch = cleaned.match(/^([a-zA-Z]+)\s+(\d{1,2})(?:\s+(\d{2,4}))?$/);
+  if (monthDayMatch) {
+    const m = MONTH_INDEX_MAP[monthDayMatch[1].toLowerCase()];
+    const d = Number(monthDayMatch[2]);
+    if (m !== undefined) {
+      let y = fallbackYear;
+      if (monthDayMatch[3]) {
+        const rawY = Number(monthDayMatch[3]);
+        y = rawY < 100 ? 2000 + rawY : rawY;
+      }
+      const dt = new Date(y, m, d);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+  }
+
+  // 5. Day-only right side of a range like "Apr 22 - 25, 2026" -> "25 2026" or "25"
+  const dayOnlyMatch = cleaned.match(/^(\d{1,2})(?:\s+(\d{4}))?$/);
+  if (dayOnlyMatch && fallbackMonth !== undefined) {
+    const d = Number(dayOnlyMatch[1]);
+    const y = dayOnlyMatch[2] ? Number(dayOnlyMatch[2]) : fallbackYear;
+    const dt = new Date(y, fallbackMonth, d);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+
+  return null;
+}
+
+/**
+ * Parses an event date string (including multi-day ranges like "22 APR - 25 APR",
+ * "Apr 22 - 25, 2026", "11/25/2026", or "2026-11-25") into its end calendar date.
+ */
+export function parseEventEndDate(
+  dateStr?: string,
+  referenceNow: Date = new Date()
+): Date | null {
+  const raw = String(dateStr || '').trim();
+  if (!raw || /^(tbd|tba|coming soon|to be announced)$/i.test(raw)) {
+    return null;
+  }
+
+  const explicitYearMatch = raw.match(/\b(20\d{2})\b/);
+  const fallbackYear = explicitYearMatch ? Number(explicitYearMatch[1]) : referenceNow.getFullYear();
+
+  // Check if ISO single date first so YYYY-MM-DD isn't split on hyphen
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(raw)) {
+    return parseSingleEventDate(raw, fallbackYear);
+  }
+
+  const rangeParts = raw.split(/\s*(?:–|—|\bto\b|\bthrough\b|-(?=\s*[a-zA-Z0-9]))\s*/i).filter(Boolean);
+  if (rangeParts.length >= 2) {
+    const startDate = parseSingleEventDate(rangeParts[0], fallbackYear);
+    const endPart = rangeParts[rangeParts.length - 1];
+    const endDate = parseSingleEventDate(
+      endPart,
+      fallbackYear,
+      startDate ? startDate.getMonth() : undefined
+    );
+    if (endDate) return endDate;
+    if (startDate) return startDate;
+  }
+
+  return parseSingleEventDate(raw, fallbackYear);
+}
+
+/**
+ * Returns true if an event should appear under "Past Events":
+ * - Explicitly flagged as past/deleted/archived/completed
+ * - Or its parsed calendar end date is strictly before today
+ */
+export function isEventPast(
+  event: ClubEvent,
+  referenceNow: Date = new Date()
+): boolean {
+  if (event.isPast) return true;
+  if (/\b(past|completed|archived|deleted|ended|finished)\b/i.test(`${event.status || ''} ${event.category || ''}`)) {
+    return true;
+  }
+  const endDate = parseEventEndDate(event.date, referenceNow);
+  if (!endDate) return false;
+
+  const startOfToday = new Date(
+    referenceNow.getFullYear(),
+    referenceNow.getMonth(),
+    referenceNow.getDate()
+  );
+  return endDate.getTime() < startOfToday.getTime();
+}
+
+/**
+ * Splits events into two distinct sorted lists:
+ * - `upcoming`: active future/today/TBA events (soonest first)
+ * - `past`: past or deleted/archived events (most recent first, capped at maxPastEvents = 3)
+ */
+export function splitAndSortEvents(
+  activeEvents: ClubEvent[],
+  archivedPastEvents: ClubEvent[] = [],
+  referenceNow: Date = new Date(),
+  maxPastEvents = 3
+): { upcoming: ClubEvent[]; past: ClubEvent[] } {
+  const upcoming: ClubEvent[] = [];
+  const pastMap = new Map<string, ClubEvent>();
+
+  const upsertPast = (ev: ClubEvent) => {
+    const key = getEventCanonicalKey(ev) || ev.id;
+    const normalized: ClubEvent = { ...ev, isPast: true };
+    const existing = pastMap.get(key);
+    if (!existing) {
+      pastMap.set(key, normalized);
+    } else {
+      pastMap.set(key, {
+        ...existing,
+        ...normalized,
+        imageUrl: normalized.imageUrl || existing.imageUrl,
+        archivedAt: normalized.archivedAt || existing.archivedAt,
+      });
+    }
+  };
+
+  for (const ev of activeEvents || []) {
+    if (isEventPast(ev, referenceNow)) {
+      upsertPast(ev);
+    } else {
+      upcoming.push(ev);
+    }
+  }
+
+  // Only include archived/deleted events that are not currently active & upcoming
+  const upcomingKeys = new Set(
+    upcoming.map((ev) => getEventCanonicalKey(ev) || ev.id)
+  );
+  for (const archived of archivedPastEvents || []) {
+    const key = getEventCanonicalKey(archived) || archived.id;
+    if (!upcomingKeys.has(key)) {
+      upsertPast(archived);
+    }
+  }
+
+  upcoming.sort((a, b) => {
+    const da = parseEventEndDate(a.date, referenceNow);
+    const db = parseEventEndDate(b.date, referenceNow);
+    if (da && db) return da.getTime() - db.getTime();
+    if (da) return -1;
+    if (db) return 1;
+    return 0;
+  });
+
+  const getPastSortTime = (ev: ClubEvent): number => {
+    const parsed = parseEventEndDate(ev.date, referenceNow);
+    if (parsed) return parsed.getTime();
+    if (ev.archivedAt) {
+      const archivedMs = Date.parse(ev.archivedAt);
+      if (!Number.isNaN(archivedMs)) return archivedMs;
+    }
+    return 0;
+  };
+
+  const past = Array.from(pastMap.values())
+    .sort((a, b) => getPastSortTime(b) - getPastSortTime(a))
+    .slice(0, maxPastEvents);
+
+  return { upcoming, past };
+}
+
 
