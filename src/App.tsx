@@ -22,7 +22,6 @@ import {
   SponsorItem,
   ClubEvent,
   filterPlayers,
-  formatReplaceTag,
   isValidWebsiteUrl,
   normalizeWebsiteUrl,
   splitAndSortEvents,
@@ -927,17 +926,27 @@ export default function App() {
                 {/* Center Team Name & Identity */}
                 <div className="md:col-span-6 text-center space-y-2.5">
                   <div className="text-[11px] font-mono-tabular text-[#EAB308] uppercase tracking-widest">
-                    Est. 2026 · New Jersey · 501(c)(3) Public Charity
+                    Est. 2026 · 501(c)(3) Public Charity · Federal EIN: 43-2191074
                   </div>
                   <h1
-                    className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white font-display uppercase tracking-wider leading-none"
+                    className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white font-display uppercase tracking-wider leading-tight"
                     style={{ textWrap: 'balance' }}
                   >
-                    Garden State Warriors
+                    Garden State Disabled Veterans Hockey Club Inc.
                   </h1>
-                  <p className="text-xs sm:text-sm text-neutral-300">
-                    Veterans Hockey Club Inc.
+                  <p className="text-xs sm:text-sm font-medium text-neutral-200">
+                    Operating as <span className="text-[#EAB308] font-semibold">Garden State Warriors Hockey Club</span>
                   </p>
+                  <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[11px] text-neutral-400 font-mono-tabular">
+                    <span>6 Highland Ct, Morris Plains, NJ 07950</span>
+                    <span aria-hidden="true">·</span>
+                    <a
+                      href="mailto:matthew@gswarriorshockey.com"
+                      className="text-neutral-200 hover:text-[#EAB308] transition-colors"
+                    >
+                      matthew@gswarriorshockey.com
+                    </a>
+                  </div>
                   <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
                     <button
                       type="button"
@@ -1073,9 +1082,9 @@ export default function App() {
               })()}
             </section>
 
-            {/* UNDERNEATH SLIDE DECK: EXACT INTRO PARAGRAPH */}
+            {/* UNDERNEATH SLIDE DECK: OFFICIAL MISSION STATEMENT & 501(c)(3) VERIFICATION */}
             <section className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 sm:p-8 text-center space-y-6">
-              <div className="max-w-2xl mx-auto space-y-3">
+              <div className="max-w-3xl mx-auto space-y-4">
                 <h2
                   className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white font-display uppercase tracking-wide"
                   style={{ textWrap: 'balance' }}
@@ -1083,15 +1092,26 @@ export default function App() {
                   Veteran Hockey, run by veterans.
                 </h2>
                 <p className="text-sm sm:text-base text-[#EAB308] font-semibold leading-relaxed">
-                  Garden State Warriors Veterans Hockey Club is a registered 501(c)(3)
-                  tax-exempt public charity.
+                  Garden State Disabled Veterans Hockey Club Inc. (operating as Garden State Warriors Hockey Club) · 501(c)(3) Public Charity · Federal EIN: 43-2191074
                 </p>
-                <p className="text-[11px] text-amber-200/80 font-mono-tabular pt-1">
-                  {formatReplaceTag(
-                    'additional introductory story once written by the club',
-                    'text'
-                  )}
-                </p>
+                <div className="space-y-3 text-left text-sm text-neutral-200 leading-relaxed bg-[#080E0B] border border-white/[0.08] rounded-xl p-5 sm:p-6">
+                  <p>
+                    The Garden State Disabled Veterans Hockey Club is a veteran/player-led 501(c)(3) nonprofit dedicated to empowering disabled veterans through the sport of hockey. Founded on the principles that this is the players’ team and every voice matters, we foster an environment of respect, accountability, trust, transparency and shared ownership. On the ice we compete. Off the ice we support. Together we continue our mission of service — to each other.
+                  </p>
+                  <p className="text-neutral-300">
+                    The organization was established in 2026 to provide therapeutic recreation, physical rehabilitation, mental wellness support, and community camaraderie to injured, ill, and disabled military veterans residing in New Jersey through the sport of amateur ice hockey. The organization operates to foster national and international amateur sports competition under the guidelines of USA Hockey&apos;s Warrior Hockey discipline, promoting holistic healing, stress management, and peer-to-peer transitional support for veterans dealing with physical injuries, PTSD, and other service-connected challenges.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-neutral-400 font-mono-tabular pt-1">
+                  <span>6 Highland Ct, Morris Plains, NJ 07950</span>
+                  <span aria-hidden="true">·</span>
+                  <a
+                    href="mailto:matthew@gswarriorshockey.com"
+                    className="text-[#EAB308] hover:underline"
+                  >
+                    matthew@gswarriorshockey.com
+                  </a>
+                </div>
               </div>
 
               {/* 6 U.S. Armed Forces Branches */}
@@ -1290,16 +1310,26 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="p-6 rounded-xl bg-[#070C09] border border-[#EAB308]/40 space-y-2">
-                  <p className="text-base sm:text-lg font-bold text-[#EAB308] font-mono-tabular">
-                    [Insert = Mission statement eventually]
+                <div className="p-6 rounded-xl bg-[#070C09] border border-[#EAB308]/40 space-y-4">
+                  <p className="text-sm sm:text-base text-neutral-100 leading-relaxed">
+                    The Garden State Disabled Veterans Hockey Club is a veteran/player-led 501(c)(3) nonprofit dedicated to empowering disabled veterans through the sport of hockey. Founded on the principles that this is the players’ team and every voice matters, we foster an environment of respect, accountability, trust, transparency and shared ownership. On the ice we compete. Off the ice we support. Together we continue our mission of service — to each other.
+                  </p>
+                  <p className="text-sm text-neutral-300 leading-relaxed">
+                    The organization was established in 2026 to provide therapeutic recreation, physical rehabilitation, mental wellness support, and community camaraderie to injured, ill, and disabled military veterans residing in New Jersey through the sport of amateur ice hockey. The organization operates to foster national and international amateur sports competition under the guidelines of USA Hockey&apos;s Warrior Hockey discipline, promoting holistic healing, stress management, and peer-to-peer transitional support for veterans dealing with physical injuries, PTSD, and other service-connected challenges.
                   </p>
                 </div>
 
-                <p className="text-sm text-neutral-300 leading-relaxed">
-                  Veteran Hockey, run by veterans. Garden State Warriors Veterans Hockey
-                  Club Inc. is a registered 501(c)(3) tax-exempt public charity.
-                </p>
+                <div className="text-xs text-neutral-300 leading-relaxed space-y-1 pt-1">
+                  <p className="font-semibold text-[#EAB308]">
+                    Garden State Disabled Veterans Hockey Club Inc. (operating as Garden State Warriors Hockey Club)
+                  </p>
+                  <p className="font-mono-tabular text-neutral-400">
+                    501(c)(3) Public Charity · Federal EIN: 43-2191074 · 6 Highland Ct, Morris Plains, NJ 07950 ·{' '}
+                    <a href="mailto:matthew@gswarriorshockey.com" className="text-[#EAB308] hover:underline">
+                      matthew@gswarriorshockey.com
+                    </a>
+                  </p>
+                </div>
               </div>
             )}
 
@@ -2308,11 +2338,22 @@ export default function App() {
                 </a>
               </div>
 
-              <div className="p-3 rounded-lg bg-black/40 border border-[#EAB308]/30 text-[11px] text-amber-200/90 font-mono-tabular">
-                {formatReplaceTag(
-                  'official club email address and home rink mailing address',
-                  'text'
-                )}
+              <div className="p-4 rounded-xl bg-[#080E0B] border border-white/10 text-xs text-neutral-300 space-y-1.5 text-center">
+                <p className="font-semibold text-white">
+                  Garden State Disabled Veterans Hockey Club Inc. (operating as Garden State Warriors Hockey Club)
+                </p>
+                <p className="text-neutral-400 font-mono-tabular">
+                  501(c)(3) Public Charity · Federal EIN: 43-2191074
+                </p>
+                <p className="text-neutral-400 font-mono-tabular">
+                  6 Highland Ct, Morris Plains, NJ 07950 ·{' '}
+                  <a
+                    href="mailto:matthew@gswarriorshockey.com"
+                    className="text-[#EAB308] hover:underline"
+                  >
+                    matthew@gswarriorshockey.com
+                  </a>
+                </p>
               </div>
             </div>
           </div>
@@ -2326,31 +2367,48 @@ export default function App() {
 
       {/* SLEEK INSTITUTIONAL FOOTER */}
       <footer className="bg-[#050907] border-t border-white/[0.08] py-8 px-4 sm:px-6 mt-12">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <img
-              src={TEAM_LOGOS.greenGoldCrest}
-              alt="Garden State Warriors Primary Logo"
-              className="w-11 h-11 object-contain"
-              referrerPolicy="no-referrer"
-            />
-            <img
-              src={TEAM_LOGOS.redNjStickCrest}
-              alt="Garden State Warriors Secondary Logo"
-              className="w-11 h-11 object-contain rounded-full"
-              referrerPolicy="no-referrer"
-            />
-            <div>
-              <span className="text-sm font-bold text-white font-display uppercase block">
-                Garden State Warriors Veterans Hockey Club Inc.
+        <div className="max-w-6xl mx-auto flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="flex items-center gap-2 shrink-0 pt-0.5 sm:pt-0">
+              <img
+                src={TEAM_LOGOS.greenGoldCrest}
+                alt="Garden State Warriors Primary Logo"
+                className="w-11 h-11 object-contain"
+                referrerPolicy="no-referrer"
+              />
+              <img
+                src={TEAM_LOGOS.redNjStickCrest}
+                alt="Garden State Warriors Secondary Logo"
+                className="w-11 h-11 object-contain rounded-full"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+            <div className="space-y-1">
+              <span className="text-sm font-bold text-white font-display uppercase block leading-snug">
+                Garden State Disabled Veterans Hockey Club Inc.{' '}
+                <span className="text-neutral-300 font-sans font-normal normal-case text-xs">
+                  (operating as Garden State Warriors Hockey Club)
+                </span>
               </span>
-              <span className="text-[11px] text-neutral-400">
-                Veteran Hockey, run by veterans · Registered 501(c)(3) Public Charity
-              </span>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-neutral-300 font-mono-tabular">
+                <span>501(c)(3) Public Charity</span>
+                <span aria-hidden="true">·</span>
+                <span>Federal EIN: 43-2191074</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-neutral-400 font-mono-tabular">
+                <span>6 Highland Ct, Morris Plains, NJ 07950</span>
+                <span aria-hidden="true">·</span>
+                <a
+                  href="mailto:matthew@gswarriorshockey.com"
+                  className="text-[#EAB308] hover:underline"
+                >
+                  matthew@gswarriorshockey.com
+                </a>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 text-xs text-neutral-300">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-neutral-300">
             <a
               href={SOCIAL_LINKS.instagramUrl}
               target="_blank"

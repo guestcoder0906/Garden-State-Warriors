@@ -213,8 +213,9 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
               Veteran-Run Organization
             </h3>
             <p className="text-xs text-neutral-300 leading-relaxed">
-              Garden State Warriors Veterans Hockey Club Inc. is a registered 501(c)(3)
-              nonprofit run by veterans for veterans.
+              Garden State Disabled Veterans Hockey Club Inc. (operating as Garden State Warriors
+              Hockey Club) is a registered 501(c)(3) nonprofit (Federal EIN: 43-2191074) run by
+              veterans for veterans.
             </p>
           </div>
         </div>

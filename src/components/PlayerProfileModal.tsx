@@ -387,10 +387,10 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               />
               <div>
                 <p className="text-xs font-bold text-white font-display uppercase">
-                  Garden State Warriors Veterans Hockey Club
+                  Garden State Disabled Veterans Hockey Club Inc.
                 </p>
                 <p className="text-[11px] text-neutral-400">
-                  Registered 501(c)(3) Tax-Exempt Public Charity
+                  Operating as Garden State Warriors Hockey Club · 501(c)(3) · EIN: 43-2191074
                 </p>
               </div>
             </div>
