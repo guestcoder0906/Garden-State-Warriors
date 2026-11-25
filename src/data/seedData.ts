@@ -8,9 +8,12 @@ import {
   formatReplaceTag,
 } from '../utils/rosterLogic';
 
+import greenGoldCrestImg from '../assets/green-gold-crest.png';
+import redNjCrestImg from '../assets/red-nj-crest.png';
+
 export const TEAM_LOGOS = {
-  greenGoldCrest: '/assets/aistudio/IMG_9960_cf062ecf.PNG',
-  redNjStickCrest: '/assets/aistudio/IMG_9961_92ae1267.PNG',
+  greenGoldCrest: greenGoldCrestImg,
+  redNjStickCrest: redNjCrestImg,
   instagramScreenshot: '/assets/aistudio/IMG_9669_e858d093.png',
 };
 

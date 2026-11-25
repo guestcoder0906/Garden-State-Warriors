@@ -92,10 +92,10 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
   return (
     <div className="space-y-10">
       {/* Sponsors Promotion Hero */}
-      <section className="rounded-2xl bg-gradient-to-b from-[#112017] via-[#0C1610] to-[#09100C] border border-white/10 p-6 sm:p-10 shadow-2xl">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+      <section className="rounded-2xl bg-gradient-to-b from-[#112017] via-[#0C1610] to-[#09100C] border border-white/10 p-5 sm:p-10 shadow-2xl">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-center">
           <div className="lg:col-span-8 space-y-4">
-            <div className="flex items-center gap-2 text-xs text-[#EAB308] font-mono-tabular uppercase tracking-wider">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-[#EAB308] font-mono-tabular uppercase tracking-wider">
               <span>501(c)(3) Community Partnerships</span>
               <span aria-hidden="true">·</span>
               <span>Team & Veteran Support</span>
@@ -115,7 +115,7 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
               <button
                 type="button"
                 onClick={scrollToForm}
-                className="px-5 py-2.5 rounded-xl bg-[#EAB308] hover:bg-[#FACC15] text-[#070C09] font-extrabold text-xs uppercase tracking-wider transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0"
+                className="px-5 py-2.5 min-h-[42px] rounded-xl bg-[#EAB308] hover:bg-[#FACC15] text-[#070C09] font-extrabold text-xs uppercase tracking-wider transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0"
               >
                 <span>Become a Sponsor</span>
                 <ArrowDown className="w-4 h-4" />
@@ -124,7 +124,7 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
               <button
                 type="button"
                 onClick={onNavigateDonate}
-                className="px-5 py-2.5 rounded-xl bg-[#881616] hover:bg-[#991B1B] text-white font-bold text-xs uppercase tracking-wider transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0"
+                className="px-5 py-2.5 min-h-[42px] rounded-xl bg-[#881616] hover:bg-[#991B1B] text-white font-bold text-xs uppercase tracking-wider transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0"
               >
                 <Heart className="w-4 h-4" />
                 <span>Make a Donation</span>
@@ -132,15 +132,16 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
             </div>
           </div>
 
-          <div className="lg:col-span-4 bg-[#080E0B] border border-white/[0.08] rounded-xl p-5 space-y-3">
+          <div className="lg:col-span-4 bg-[#080E0B] border border-white/[0.08] rounded-xl p-4 sm:p-5 space-y-3">
             <div className="flex items-center gap-3">
               <img
                 src={TEAM_LOGOS.greenGoldCrest}
                 alt="Garden State Warriors Crest"
-                className="w-11 h-11 rounded-full object-contain shrink-0"
-                referrerPolicy="no-referrer"
+                width={44}
+                height={44}
+                className="w-11 h-11 rounded-full object-cover shrink-0 border border-[#EAB308]/35 bg-[#050907]"
               />
-              <div>
+              <div className="min-w-0">
                 <span className="text-xs font-bold text-[#EAB308] font-display uppercase block">
                   Tax-Deductible Support
                 </span>
@@ -158,7 +159,7 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
       </section>
 
       {/* Why Partner With Garden State Warriors */}
-      <section className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 sm:p-8 space-y-6">
+      <section className="bg-[#0D1611] border border-white/10 rounded-2xl p-5 sm:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
           <div className="space-y-1">
             <span className="text-xs text-[#EAB308] font-mono-tabular uppercase tracking-wider">
@@ -172,7 +173,7 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
           <button
             type="button"
             onClick={onNavigateBoard}
-            className="px-4 py-2 rounded-lg bg-white/[0.08] hover:bg-white/15 text-xs font-bold text-white transition-colors whitespace-nowrap shrink-0 self-start sm:self-auto"
+            className="px-4 py-2 min-h-[40px] rounded-lg bg-white/[0.08] hover:bg-white/15 text-xs font-bold text-white transition-colors whitespace-nowrap shrink-0 self-start sm:self-auto"
           >
             Meet Board & Staff
           </button>
@@ -225,7 +226,7 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
       <section
         id="become-a-sponsor-form"
         aria-labelledby="become-a-sponsor-heading"
-        className="max-w-3xl mx-auto bg-[#0D1611] border border-[#EAB308]/35 rounded-2xl p-6 sm:p-8 space-y-6"
+        className="max-w-3xl mx-auto bg-[#0D1611] border border-[#EAB308]/35 rounded-2xl p-4 sm:p-8 space-y-6"
       >
         <div className="space-y-1.5 border-b border-white/10 pb-4">
           <div className="flex items-center gap-2 text-xs text-[#EAB308] font-mono-tabular uppercase tracking-wider">

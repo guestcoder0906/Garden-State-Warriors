@@ -126,15 +126,15 @@ export const BecomeWarriorForm: React.FC<{ onSubmitted?: () => void }> = ({ onSu
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Verified Eligibility & Onboarding */}
-      <div className="bg-[#0F1913] border border-white/10 rounded-2xl p-6 md:p-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-6">
-          <div className="space-y-1.5">
-            <span className="text-xs font-mono-tabular text-[#EAB308]">
+      <div className="bg-[#0F1913] border border-white/10 rounded-2xl p-4 sm:p-6 md:p-8 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-5 sm:pb-6">
+          <div className="space-y-1.5 min-w-0">
+            <span className="text-xs font-mono-tabular text-[#EAB308] block">
               USA Hockey Warrior Discipline · Verified Veteran Roster
             </span>
-            <h1 className="text-3xl md:text-4xl font-extrabold text-white font-display uppercase tracking-wide">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white font-display uppercase tracking-wide">
               Joining the Garden State Warriors
             </h1>
             <p className="text-sm text-neutral-300 max-w-2xl leading-relaxed">
@@ -143,27 +143,29 @@ export const BecomeWarriorForm: React.FC<{ onSubmitted?: () => void }> = ({ onSu
               U.S. military veterans and club leadership.
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0">
             <img
               src={TEAM_LOGOS.greenGoldCrest}
               alt="Garden State Warriors Crest"
-              className="w-14 h-14 object-contain"
-              referrerPolicy="no-referrer"
+              width={56}
+              height={56}
+              className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
             />
             <img
               src={TEAM_LOGOS.redNjStickCrest}
               alt="Garden State Warriors NJ Stick Logo"
-              className="w-14 h-14 object-contain rounded-full"
-              referrerPolicy="no-referrer"
+              width={56}
+              height={56}
+              className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-full shrink-0 bg-[#050907]"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div className="bg-[#09100C] border border-white/10 rounded-xl p-5 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+          <div className="bg-[#09100C] border border-white/10 rounded-xl p-4 sm:p-5 space-y-3">
             <h2 className="text-base font-bold text-white uppercase font-display tracking-wide flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-[#EAB308]" />
-              Military Service Requirements
+              <ShieldCheck className="w-4 h-4 text-[#EAB308] shrink-0" />
+              <span>Military Service Requirements</span>
             </h2>
             <ul className="text-xs md:text-sm text-neutral-300 space-y-2 list-disc list-inside leading-relaxed">
               <li>
@@ -176,10 +178,10 @@ export const BecomeWarriorForm: React.FC<{ onSubmitted?: () => void }> = ({ onSu
             </ul>
           </div>
 
-          <div className="bg-[#09100C] border border-white/10 rounded-xl p-5 space-y-3">
+          <div className="bg-[#09100C] border border-white/10 rounded-xl p-4 sm:p-5 space-y-3">
             <h2 className="text-base font-bold text-white uppercase font-display tracking-wide flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-[#EF4444]" />
-              And One of the Following
+              <CheckCircle2 className="w-4 h-4 text-[#EF4444] shrink-0" />
+              <span>And One of the Following</span>
             </h2>
             <ul className="text-xs md:text-sm text-neutral-300 space-y-2 list-disc list-inside leading-relaxed">
               <li>10% or greater service-connected disability rating from the VA.</li>
@@ -192,7 +194,7 @@ export const BecomeWarriorForm: React.FC<{ onSubmitted?: () => void }> = ({ onSu
               className="inline-flex items-center gap-1.5 text-xs text-[#EAB308] hover:underline pt-1 font-medium"
             >
               <span>Official USA Hockey Warrior Eligibility Rules</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
             </a>
           </div>
         </div>
@@ -200,7 +202,7 @@ export const BecomeWarriorForm: React.FC<{ onSubmitted?: () => void }> = ({ onSu
         <hr className="border-white/10" />
 
         {/* Direct Website Player Application Form */}
-        <div className="bg-[#0A120E] border border-[#EAB308]/40 rounded-2xl p-6 sm:p-8 space-y-6">
+        <div className="bg-[#0A120E] border border-[#EAB308]/40 rounded-2xl p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6">
           <div className="border-b border-white/10 pb-4 space-y-1">
             <span className="text-xs text-[#EAB308] font-mono-tabular">
               Player Registration

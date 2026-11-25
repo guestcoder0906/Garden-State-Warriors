@@ -521,15 +521,16 @@ export default function App() {
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
       {/* 1. Instagram Live Scrollable Viewing iFrame (@njveteranhockey) */}
       <div className="lg:col-span-7 bg-[#0D1611] border border-white/10 rounded-2xl overflow-hidden flex flex-col shadow-xl">
-        <div className="px-4 py-3 bg-[#09100C] border-b border-white/10 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="px-4 py-3 bg-[#09100C] border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <img
               src={TEAM_LOGOS.redNjStickCrest}
               alt="Instagram @njveteranhockey"
-              className="w-6 h-6 rounded-full object-contain"
-              referrerPolicy="no-referrer"
+              width={24}
+              height={24}
+              className="w-6 h-6 rounded-full object-cover shrink-0 bg-[#050907]"
             />
-            <span className="text-xs font-bold text-white font-mono-tabular">
+            <span className="text-xs font-bold text-white font-mono-tabular truncate">
               Live Instagram Feed · {SOCIAL_LINKS.instagramHandle}
             </span>
           </div>
@@ -537,13 +538,13 @@ export default function App() {
             href={SOCIAL_LINKS.instagramUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-[#EAB308] hover:underline inline-flex items-center gap-1"
+            className="text-xs text-[#EAB308] hover:underline inline-flex items-center gap-1 whitespace-nowrap shrink-0"
           >
             <span>Open Instagram</span>
             <ExternalLink className="w-3 h-3" />
           </a>
         </div>
-        <div className="w-full h-[580px] bg-white overflow-y-auto">
+        <div className="w-full h-[440px] sm:h-[580px] bg-white overflow-y-auto overscroll-contain">
           <iframe
             title="Garden State Warriors Instagram Live Posts (@njveteranhockey)"
             src={SOCIAL_LINKS.instagramEmbedUrl}
@@ -555,15 +556,16 @@ export default function App() {
 
       {/* 2. Facebook Official Page & Events Viewer (Page ID 61594324051761) */}
       <div className="lg:col-span-5 bg-[#0D1611] border border-white/10 rounded-2xl overflow-hidden flex flex-col justify-between shadow-xl">
-        <div className="px-4 py-3 bg-[#09100C] border-b border-white/10 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="px-4 py-3 bg-[#09100C] border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <img
               src={TEAM_LOGOS.greenGoldCrest}
               alt="Facebook Garden State Warriors"
-              className="w-6 h-6 rounded-full object-contain"
-              referrerPolicy="no-referrer"
+              width={24}
+              height={24}
+              className="w-6 h-6 rounded-full object-cover shrink-0 border border-[#EAB308]/35 bg-[#050907]"
             />
-            <span className="text-xs font-bold text-white font-mono-tabular">
+            <span className="text-xs font-bold text-white font-mono-tabular truncate">
               Facebook · Posts & Events
             </span>
           </div>
@@ -571,7 +573,7 @@ export default function App() {
             href={SOCIAL_LINKS.facebookUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-[#EAB308] hover:underline inline-flex items-center gap-1"
+            className="text-xs text-[#EAB308] hover:underline inline-flex items-center gap-1 whitespace-nowrap shrink-0"
           >
             <span>Open Facebook</span>
             <ExternalLink className="w-3 h-3" />
@@ -579,7 +581,7 @@ export default function App() {
         </div>
 
         {showFacebookPluginIframe ? (
-          <div className="w-full h-[580px] bg-[#09100C] flex flex-col">
+          <div className="w-full h-[440px] sm:h-[580px] bg-[#09100C] flex flex-col">
             <iframe
               title="Garden State Warriors Facebook Live Posts & Events"
               src={SOCIAL_LINKS.facebookEmbedUrl}
@@ -587,12 +589,12 @@ export default function App() {
               loading="lazy"
               allow="encrypted-media"
             />
-            <div className="p-2.5 bg-[#09100C] border-t border-white/10 flex items-center justify-between text-[11px] text-neutral-400">
+            <div className="p-2.5 bg-[#09100C] border-t border-white/10 flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-400">
               <span>Note: Facebook requires an active Facebook login in your browser.</span>
               <button
                 type="button"
                 onClick={() => setShowFacebookPluginIframe(false)}
-                className="text-[#EAB308] hover:underline font-semibold"
+                className="text-[#EAB308] hover:underline font-semibold whitespace-nowrap shrink-0"
               >
                 Back to Feed Preview
               </button>
@@ -660,21 +662,23 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[#070C09] text-[#F4F6F4] selection:bg-[#EAB308] selection:text-[#070C09]">
       {/* SLEEK STICKY HEADER (Constrained to max-w-6xl so all single-line nav items fit cleanly) */}
-      <header className="sticky top-0 z-40 bg-[#070C09]/90 backdrop-blur-xl border-b border-white/[0.08]">
-        <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-40 bg-[#070C09]/95 backdrop-blur-xl border-b border-white/[0.08]">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2 sm:gap-4">
           {/* Brand Crest & Name */}
           <button
             type="button"
             onClick={() => navigateToSection('home')}
-            className="flex items-center gap-2 text-left whitespace-nowrap shrink-0 group focus:outline-none"
+            className="flex items-center gap-2 text-left min-w-0 flex-1 lg:flex-initial group focus:outline-none"
           >
             <img
               src={TEAM_LOGOS.greenGoldCrest}
               alt="Garden State Warriors Crest"
-              className="w-8 h-8 sm:w-9 sm:h-9 object-contain rounded-full transition-transform duration-200 group-hover:scale-105"
-              referrerPolicy="no-referrer"
+              width={36}
+              height={36}
+              loading="eager"
+              className="w-8 h-8 sm:w-9 sm:h-9 object-cover rounded-full shrink-0 border border-[#EAB308]/40 bg-[#050907] transition-transform duration-200 group-hover:scale-105"
             />
-            <span className="text-sm sm:text-base xl:text-lg font-extrabold tracking-wider text-white font-display uppercase">
+            <span className="text-[13px] sm:text-base xl:text-lg font-extrabold tracking-wide sm:tracking-wider text-white font-display uppercase truncate">
               Garden State Warriors
             </span>
           </button>
@@ -817,7 +821,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => navigateToSection('become-warrior')}
-              className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg bg-[#EAB308] text-[#070C09] font-bold text-[11px] sm:text-xs hover:bg-[#FACC15] transition-colors whitespace-nowrap shrink-0"
+              className="px-2.5 sm:px-3.5 py-2 rounded-lg bg-[#EAB308] text-[#070C09] font-bold text-[11px] sm:text-xs hover:bg-[#FACC15] transition-colors whitespace-nowrap shrink-0 min-h-[38px]"
             >
               Become a Warrior
             </button>
@@ -826,16 +830,19 @@ export default function App() {
               type="button"
               aria-label="Toggle navigation menu"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-1.5 sm:p-2 rounded-lg bg-white/[0.06] text-white hover:bg-white/10"
+              className="lg:hidden min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg bg-white/[0.06] text-white hover:bg-white/10 shrink-0"
             >
-              {mobileMenuOpen ? <X className="w-4 h-4 sm:w-5 sm:h-5" /> : <Menu className="w-4 h-4 sm:w-5 sm:h-5" />}
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
 
         {/* Mobile Navigation Drawer */}
         {mobileMenuOpen && (
-          <div className="lg:hidden bg-[#0B130E] border-b border-white/10 px-4 py-4 space-y-1.5">
+          <div
+            className="lg:hidden bg-[#0B130E] border-b border-white/10 px-4 py-3 space-y-1 max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             <button
               type="button"
               onClick={() => navigateToSection('home')}
@@ -916,29 +923,45 @@ export default function App() {
       </header>
 
       {/* SLEEK, BALANCED MAIN CONTENT CONTAINER (max-w-6xl) */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 md:py-10">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-3.5 sm:px-6 py-6 sm:py-8 md:py-10">
         {/* ===================================================================
             1. HOME PAGE
            =================================================================== */}
         {activeSection === 'home' && (
-          <div className="space-y-12">
-            {/* Dual Crest Team Header Banner (Matches Wireframe IMG_9668) */}
-            <section className="relative rounded-2xl bg-gradient-to-b from-[#112017] via-[#0C1610] to-[#09100C] border border-white/10 p-6 sm:p-8 shadow-2xl">
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+          <div className="space-y-8 sm:space-y-12">
+            {/* Dual Crest Team Header Banner (Side-by-side crests on mobile, 3-col on md+) */}
+            <section className="relative rounded-2xl bg-gradient-to-b from-[#112017] via-[#0C1610] to-[#09100C] border border-white/10 p-5 sm:p-8 shadow-2xl">
+              <div className="grid grid-cols-2 md:grid-cols-12 gap-4 sm:gap-6 items-center">
                 {/* Left Official Crest: Green & Gold */}
-                <div className="md:col-span-3 flex justify-center md:justify-start">
-                  <div className="p-2 rounded-full bg-[#070C09] border border-[#EAB308]/40 shadow-lg">
+                <div className="col-span-1 md:col-span-3 order-1 flex justify-end md:justify-start">
+                  <div className="p-1.5 sm:p-2 rounded-full bg-[#070C09] border border-[#EAB308]/40 shadow-lg shrink-0">
                     <img
                       src={TEAM_LOGOS.greenGoldCrest}
                       alt="Garden State Warriors Veterans Hockey Club Est. 2026 Crest"
-                      className="w-24 h-24 sm:w-28 sm:h-28 object-contain rounded-full"
-                      referrerPolicy="no-referrer"
+                      width={112}
+                      height={112}
+                      loading="eager"
+                      className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 object-cover rounded-full shrink-0 bg-[#050907]"
+                    />
+                  </div>
+                </div>
+
+                {/* Right Official Crest: Red NJ Silhouette & Crossed Sticks */}
+                <div className="col-span-1 md:col-span-3 order-2 md:order-3 flex justify-start md:justify-end">
+                  <div className="p-1.5 sm:p-2 rounded-full bg-[#070C09] border border-[#991B1B]/60 shadow-lg shrink-0">
+                    <img
+                      src={TEAM_LOGOS.redNjStickCrest}
+                      alt="Garden State Warriors NJ Stick Logo"
+                      width={112}
+                      height={112}
+                      loading="eager"
+                      className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 object-cover rounded-full shrink-0 bg-[#050907]"
                     />
                   </div>
                 </div>
 
                 {/* Center Team Name & Identity */}
-                <div className="md:col-span-6 text-center space-y-2.5">
+                <div className="col-span-2 md:col-span-6 order-3 md:order-2 text-center space-y-2.5 min-w-0">
                   <div className="text-[11px] font-mono-tabular text-[#EAB308] uppercase tracking-widest">
                     Est. 2026 · 501(c)(3) Public Charity · Federal EIN: 43-2191074
                   </div>
@@ -954,7 +977,7 @@ export default function App() {
                   <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[11px] text-neutral-400 font-mono-tabular">
                     <a
                       href="mailto:matthew@gswarriorshockey.com"
-                      className="text-neutral-200 hover:text-[#EAB308] transition-colors"
+                      className="text-neutral-200 hover:text-[#EAB308] transition-colors break-all"
                     >
                       matthew@gswarriorshockey.com
                     </a>
@@ -963,30 +986,18 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => navigateToAboutSub('players')}
-                      className="px-4 py-2 rounded-lg bg-[#EAB308] text-[#070C09] font-bold text-xs hover:bg-[#FACC15] transition-colors"
+                      className="px-4 py-2 min-h-[40px] rounded-lg bg-[#EAB308] text-[#070C09] font-bold text-xs hover:bg-[#FACC15] transition-colors"
                     >
                       View Roster
                     </button>
                     <button
                       type="button"
                       onClick={() => navigateToSection('donate')}
-                      className="px-4 py-2 rounded-lg bg-[#881616] text-white font-bold text-xs hover:bg-[#991B1B] transition-colors inline-flex items-center gap-1.5"
+                      className="px-4 py-2 min-h-[40px] rounded-lg bg-[#881616] text-white font-bold text-xs hover:bg-[#991B1B] transition-colors inline-flex items-center gap-1.5"
                     >
                       <Heart className="w-3.5 h-3.5" />
                       <span>Donate</span>
                     </button>
-                  </div>
-                </div>
-
-                {/* Right Official Crest: Red NJ Silhouette & Crossed Sticks */}
-                <div className="md:col-span-3 flex justify-center md:justify-end">
-                  <div className="p-2 rounded-full bg-[#070C09] border border-[#991B1B]/60 shadow-lg">
-                    <img
-                      src={TEAM_LOGOS.redNjStickCrest}
-                      alt="Garden State Warriors NJ Stick Logo"
-                      className="w-24 h-24 sm:w-28 sm:h-28 object-contain rounded-full"
-                      referrerPolicy="no-referrer"
-                    />
                   </div>
                 </div>
               </div>
@@ -1045,7 +1056,7 @@ export default function App() {
                         <SheetImage
                           src={slide.imageUrl}
                           alt={slide.title || slide.caption || 'Garden State Warriors Team Photo'}
-                          wrapperClassName="w-full h-[260px] sm:h-[380px] md:h-[440px] flex items-center justify-center overflow-hidden bg-[#060B08]"
+                          wrapperClassName="w-full h-[220px] sm:h-[380px] md:h-[440px] flex items-center justify-center overflow-hidden bg-[#060B08]"
                           className="w-full h-full object-contain"
                         />
                       </div>
@@ -1285,7 +1296,7 @@ export default function App() {
                 </h1>
               </div>
 
-              <div className="flex flex-wrap items-center gap-1.5 bg-[#070C09] p-1 rounded-lg border border-white/10">
+              <div className="w-full sm:w-auto flex flex-wrap items-center gap-1.5 bg-[#070C09] p-1 rounded-lg border border-white/10">
                 {(
                   [
                     { id: 'mission', label: 'Mission' },
@@ -1298,7 +1309,7 @@ export default function App() {
                     key={tab.id}
                     type="button"
                     onClick={() => setAboutSubTab(tab.id)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                    className={`px-3 py-2 min-h-[36px] rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
                       aboutSubTab === tab.id
                         ? 'bg-[#EAB308] text-[#070C09]'
                         : 'text-neutral-300 hover:text-white'
@@ -1314,13 +1325,14 @@ export default function App() {
                 ABOUT SUB-TAB 1: MISSION
                --------------------------------------------------------------- */}
             {aboutSubTab === 'mission' && (
-              <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 sm:p-10 space-y-6 max-w-3xl mx-auto">
+              <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-5 sm:p-10 space-y-6 max-w-3xl mx-auto">
                 <div className="flex items-center gap-3">
                   <img
                     src={TEAM_LOGOS.greenGoldCrest}
                     alt="Garden State Warriors Crest"
-                    className="w-12 h-12 object-contain"
-                    referrerPolicy="no-referrer"
+                    width={48}
+                    height={48}
+                    className="w-12 h-12 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
                   />
                   <div>
                     <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
@@ -1560,15 +1572,15 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="px-4 py-3 border-t border-white/10 bg-[#0A110D] flex items-center justify-between">
-                            <span className="text-[11px] text-neutral-400 font-mono-tabular">
+                          <div className="px-4 py-3 border-t border-white/10 bg-[#0A110D] flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-neutral-400 font-mono-tabular min-w-0 truncate">
                               {[cap.position, cap.rank, cap.tierTab].filter(Boolean).join(' · ')}
                             </span>
                             <button
                               type="button"
                               aria-label={`View Captain Profile for ${cap.name || 'Captain'}`}
                               onClick={() => setSelectedPlayerProfile(cap)}
-                              className="px-3 py-1 rounded-lg bg-white/10 hover:bg-[#EAB308] hover:text-[#070C09] text-xs font-bold text-white transition-colors"
+                              className="px-3 py-1.5 min-h-[36px] rounded-lg bg-white/10 hover:bg-[#EAB308] hover:text-[#070C09] text-xs font-bold text-white transition-colors whitespace-nowrap shrink-0"
                             >
                               View Profile
                             </button>
@@ -1778,8 +1790,8 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="px-4 py-3 bg-[#0A110D] border-t border-white/10 flex items-center justify-between">
-                            <span className="text-[11px] text-neutral-400 font-mono-tabular">
+                          <div className="px-4 py-3 bg-[#0A110D] border-t border-white/10 flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-neutral-400 font-mono-tabular min-w-0 truncate">
                               {player.roleBadge &&
                               player.roleBadge !== 'None' &&
                               player.roleBadge !== 'Player'
@@ -1790,7 +1802,7 @@ export default function App() {
                               type="button"
                               aria-label={`View Roster Profile for ${player.name || 'Player'}`}
                               onClick={() => setSelectedPlayerProfile(player)}
-                              className="px-3 py-1 rounded-lg bg-[#EAB308] text-[#070C09] text-xs font-bold hover:bg-[#FACC15] transition-colors"
+                              className="px-3 py-1.5 min-h-[36px] rounded-lg bg-[#EAB308] text-[#070C09] text-xs font-bold hover:bg-[#FACC15] transition-colors whitespace-nowrap shrink-0"
                             >
                               View Profile
                             </button>
@@ -2110,16 +2122,17 @@ export default function App() {
            =================================================================== */}
         {activeSection === 'donate' && (
           <div className="max-w-3xl mx-auto space-y-8">
-            <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 sm:p-8 space-y-6">
+            <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-5 sm:p-8 space-y-6">
               <div className="flex items-center gap-3">
                 <img
                   src={TEAM_LOGOS.greenGoldCrest}
                   alt="Garden State Warriors Crest"
-                  className="w-12 h-12 object-contain"
-                  referrerPolicy="no-referrer"
+                  width={48}
+                  height={48}
+                  className="w-12 h-12 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
                 />
-                <div>
-                  <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
+                <div className="min-w-0">
+                  <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider block">
                     501(c)(3) Tax-Exempt Public Charity
                   </span>
                   <h1 className="text-2xl sm:text-3xl font-extrabold text-white font-display uppercase">
@@ -2300,19 +2313,21 @@ export default function App() {
            =================================================================== */}
         {activeSection === 'contact' && (
           <div className="max-w-2xl mx-auto space-y-6">
-            <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-6 sm:p-8 text-center space-y-5">
+            <div className="bg-[#0D1611] border border-white/10 rounded-2xl p-5 sm:p-8 text-center space-y-5">
               <div className="flex justify-center items-center gap-3">
                 <img
                   src={TEAM_LOGOS.greenGoldCrest}
                   alt="Garden State Warriors Crest"
-                  className="w-14 h-14 object-contain"
-                  referrerPolicy="no-referrer"
+                  width={56}
+                  height={56}
+                  className="w-14 h-14 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
                 />
                 <img
                   src={TEAM_LOGOS.redNjStickCrest}
                   alt="Garden State Warriors NJ Stick Logo"
-                  className="w-14 h-14 object-contain rounded-full"
-                  referrerPolicy="no-referrer"
+                  width={56}
+                  height={56}
+                  className="w-14 h-14 object-cover rounded-full shrink-0 bg-[#050907]"
                 />
               </div>
 
@@ -2320,7 +2335,7 @@ export default function App() {
                 <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
                   Official Club Channels
                 </span>
-                <h1 className="text-3xl font-extrabold text-white font-display uppercase">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-white font-display uppercase">
                   Contact Garden State Warriors
                 </h1>
                 <p className="text-sm text-neutral-300 leading-relaxed">
@@ -2361,7 +2376,7 @@ export default function App() {
               </div>
 
               <div className="p-4 rounded-xl bg-[#080E0B] border border-white/10 text-xs text-neutral-300 space-y-1.5 text-center">
-                <p className="font-semibold text-white">
+                <p className="font-semibold text-white break-words">
                   Garden State Disabled Veterans Hockey Club Inc. (operating as Garden State Warriors Hockey Club)
                 </p>
                 <p className="text-neutral-400 font-mono-tabular">
@@ -2370,7 +2385,7 @@ export default function App() {
                 <p className="text-neutral-400 font-mono-tabular">
                   <a
                     href="mailto:matthew@gswarriorshockey.com"
-                    className="text-[#EAB308] hover:underline"
+                    className="text-[#EAB308] hover:underline break-all"
                   >
                     matthew@gswarriorshockey.com
                   </a>
@@ -2389,23 +2404,25 @@ export default function App() {
       {/* SLEEK INSTITUTIONAL FOOTER */}
       <footer className="bg-[#050907] border-t border-white/[0.08] py-8 px-4 sm:px-6 mt-12">
         <div className="max-w-6xl mx-auto flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-          <div className="flex items-start sm:items-center gap-3.5">
+          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
             <div className="flex items-center gap-2 shrink-0 pt-0.5 sm:pt-0">
               <img
                 src={TEAM_LOGOS.greenGoldCrest}
                 alt="Garden State Warriors Primary Logo"
-                className="w-11 h-11 object-contain rounded-full"
-                referrerPolicy="no-referrer"
+                width={44}
+                height={44}
+                className="w-10 h-10 sm:w-11 sm:h-11 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
               />
               <img
                 src={TEAM_LOGOS.redNjStickCrest}
                 alt="Garden State Warriors Secondary Logo"
-                className="w-11 h-11 object-contain rounded-full"
-                referrerPolicy="no-referrer"
+                width={44}
+                height={44}
+                className="w-10 h-10 sm:w-11 sm:h-11 object-cover rounded-full shrink-0 bg-[#050907]"
               />
             </div>
-            <div className="space-y-1">
-              <span className="text-sm font-bold text-white font-display uppercase block leading-snug">
+            <div className="space-y-1 min-w-0">
+              <span className="text-sm font-bold text-white font-display uppercase block leading-snug break-words">
                 Garden State Disabled Veterans Hockey Club Inc.{' '}
                 <span className="text-neutral-300 font-sans font-normal normal-case text-xs">
                   (operating as Garden State Warriors Hockey Club)
@@ -2419,7 +2436,7 @@ export default function App() {
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-neutral-400 font-mono-tabular">
                 <a
                   href="mailto:matthew@gswarriorshockey.com"
-                  className="text-[#EAB308] hover:underline"
+                  className="text-[#EAB308] hover:underline break-all"
                 >
                   matthew@gswarriorshockey.com
                 </a>
