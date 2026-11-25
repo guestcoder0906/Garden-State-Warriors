@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Shield,
   Heart,
   MapPin,
   ExternalLink,
@@ -21,6 +20,7 @@ import {
   FanItem,
   SponsorItem,
   ClubEvent,
+  HomeSlide,
   filterPlayers,
   isValidWebsiteUrl,
   normalizeWebsiteUrl,
@@ -65,6 +65,7 @@ import {
 import { PlayerProfileModal } from './components/PlayerProfileModal';
 import { BecomeWarriorForm } from './components/BecomeWarriorForm';
 import { SponsorsPage } from './components/SponsorsPage';
+import { MilitaryBranchCrest } from './components/MilitaryBranchCrest';
 import { SheetImage, PlayerPhotoPair, WarriorAvatar } from './components/SheetImage';
 
 type TopSection =
@@ -102,6 +103,7 @@ export default function App() {
   const [sponsors, setSponsors] = useState<SponsorItem[]>(() => initialCache?.sponsors || []);
   const [events, setEvents] = useState<ClubEvent[]>(() => initialCache?.events || []);
   const [pastEvents, setPastEvents] = useState<ClubEvent[]>(() => initialCache?.pastEvents || []);
+  const [homeSlides, setHomeSlides] = useState<HomeSlide[]>(() => initialCache?.homeSlides || []);
   const [dynamicTabs, setDynamicTabs] = useState<string[]>(() => initialCache?.detectedTabs || []);
   const [isSheetLoading, setIsSheetLoading] = useState<boolean>(() => !initialCache);
 
@@ -358,6 +360,7 @@ export default function App() {
       setStaff(sheetData.staff);
       setEvents(sheetData.events);
       setPastEvents(sheetData.pastEvents || []);
+      setHomeSlides(sheetData.homeSlides || []);
       setFans(sheetData.fans || []);
       setSponsors(sheetData.sponsors || []);
       setDynamicTabs(sheetData.detectedTabs);
@@ -400,14 +403,25 @@ export default function App() {
     };
   }, []);
 
+  const activeHomeSlides = useMemo(
+    () => (homeSlides.length > 0 ? homeSlides : HERO_SLIDE_DECK),
+    [homeSlides]
+  );
+
+  useEffect(() => {
+    if (currentSlide >= activeHomeSlides.length) {
+      setCurrentSlide(0);
+    }
+  }, [currentSlide, activeHomeSlides.length]);
+
   // Slide deck autoplay
   useEffect(() => {
-    if (!autoPlaySlides || activeSection !== 'home') return;
+    if (!autoPlaySlides || activeSection !== 'home' || activeHomeSlides.length <= 1) return;
     const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % HERO_SLIDE_DECK.length);
+      setCurrentSlide((prev) => (prev + 1) % activeHomeSlides.length);
     }, 6000);
     return () => clearInterval(timer);
-  }, [autoPlaySlides, activeSection]);
+  }, [autoPlaySlides, activeSection, activeHomeSlides.length]);
 
   // Unique Positions / Ranks dynamically derived from current roster (only non-empty cells)
   const availableRanks = useMemo(() => {
@@ -938,8 +952,6 @@ export default function App() {
                     Operating as <span className="text-[#EAB308] font-semibold">Garden State Warriors Hockey Club</span>
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[11px] text-neutral-400 font-mono-tabular">
-                    <span>6 Highland Ct, Morris Plains, NJ 07950</span>
-                    <span aria-hidden="true">·</span>
                     <a
                       href="mailto:matthew@gswarriorshockey.com"
                       className="text-neutral-200 hover:text-[#EAB308] transition-colors"
@@ -980,103 +992,115 @@ export default function App() {
               </div>
             </section>
 
-            {/* SLIDE DECK OF TEAM PHOTOS */}
-            <section aria-label="Slide Deck of Team Photos" className="space-y-3">
+            {/* SLIDE DECK OF TEAM PHOTOS (Auto-synced from Google Sheet "Home Slides" tab) */}
+            <section aria-label="Team Photos" className="space-y-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
-                    Slide Deck of Team Photos ({currentSlide + 1} / {HERO_SLIDE_DECK.length})
+                    Team Photos ({currentSlide + 1} / {activeHomeSlides.length})
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    aria-label="Previous team photo slide"
-                    onClick={() =>
-                      setCurrentSlide(
-                        (prev) => (prev - 1 + HERO_SLIDE_DECK.length) % HERO_SLIDE_DECK.length
-                      )
-                    }
-                    className="p-1.5 rounded-lg bg-[#0E1712] border border-white/10 text-white hover:border-[#EAB308]"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAutoPlaySlides(!autoPlaySlides)}
-                    className="px-2.5 py-1 rounded-lg bg-[#0E1712] border border-white/10 text-[11px] text-neutral-300 hover:text-white font-mono-tabular"
-                  >
-                    {autoPlaySlides ? 'Pause' : 'Play'}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Next team photo slide"
-                    onClick={() =>
-                      setCurrentSlide((prev) => (prev + 1) % HERO_SLIDE_DECK.length)
-                    }
-                    className="p-1.5 rounded-lg bg-[#0E1712] border border-white/10 text-white hover:border-[#EAB308]"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
+                {activeHomeSlides.length > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      aria-label="Previous team photo slide"
+                      onClick={() =>
+                        setCurrentSlide(
+                          (prev) => (prev - 1 + activeHomeSlides.length) % activeHomeSlides.length
+                        )
+                      }
+                      className="p-1.5 rounded-lg bg-[#0E1712] border border-white/10 text-white hover:border-[#EAB308]"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAutoPlaySlides(!autoPlaySlides)}
+                      className="px-2.5 py-1 rounded-lg bg-[#0E1712] border border-white/10 text-[11px] text-neutral-300 hover:text-white font-mono-tabular"
+                    >
+                      {autoPlaySlides ? 'Pause' : 'Play'}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Next team photo slide"
+                      onClick={() =>
+                        setCurrentSlide((prev) => (prev + 1) % activeHomeSlides.length)
+                      }
+                      className="p-1.5 rounded-lg bg-[#0E1712] border border-white/10 text-white hover:border-[#EAB308]"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               {(() => {
-                const slide = HERO_SLIDE_DECK[currentSlide];
+                const slide = activeHomeSlides[currentSlide] || activeHomeSlides[0];
+                if (!slide) return null;
                 return (
-                  <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-[#122218] via-[#0C1610] to-[#140B0C] min-h-[300px] sm:min-h-[340px] flex flex-col justify-between p-6 sm:p-8 shadow-xl">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-300 font-mono-tabular z-10">
-                      <span className="text-[#EAB308] font-semibold">{slide.tag}</span>
-                      <span>{slide.dateLabel}</span>
-                    </div>
-
-                    <div className="my-auto py-5 flex flex-col items-center text-center max-w-2xl mx-auto z-10 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={TEAM_LOGOS.greenGoldCrest}
-                          alt="Garden State Warriors Crest"
-                          className="w-12 h-12 object-contain"
-                          referrerPolicy="no-referrer"
-                        />
-                        <Camera className="w-6 h-6 text-[#EAB308]" />
-                        <img
-                          src={TEAM_LOGOS.redNjStickCrest}
-                          alt="Warriors NJ Stick Crest"
-                          className="w-12 h-12 object-contain rounded-full"
-                          referrerPolicy="no-referrer"
+                  <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-[#122218] via-[#0C1610] to-[#140B0C] shadow-xl">
+                    {slide.imageUrl ? (
+                      <div className="bg-[#070C09]">
+                        <SheetImage
+                          src={slide.imageUrl}
+                          alt={slide.title || slide.caption || 'Garden State Warriors Team Photo'}
+                          wrapperClassName="w-full h-[260px] sm:h-[380px] md:h-[440px] flex items-center justify-center overflow-hidden bg-[#060B08]"
+                          className="w-full h-full object-contain"
                         />
                       </div>
-
-                      <h2
-                        className="text-2xl sm:text-3xl font-extrabold text-white font-display uppercase tracking-wide"
-                        style={{ textWrap: 'balance' }}
-                      >
-                        {slide.title}
-                      </h2>
-                      <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed font-mono-tabular">
-                        {slide.subtitle}
-                      </p>
-
-                      <div className="mt-2 px-3.5 py-2 rounded-lg bg-black/60 border border-[#EAB308]/35 text-[11px] text-amber-200/90 font-mono-tabular">
-                        {slide.replaceInstruction}
+                    ) : (
+                      <div className="py-12 px-6 flex flex-col items-center justify-center text-center">
+                        <Camera className="w-8 h-8 text-[#EAB308] mb-2" />
                       </div>
-                    </div>
+                    )}
 
-                    <div className="flex items-center justify-center gap-2 z-10 pt-2">
-                      {HERO_SLIDE_DECK.map((s, idx) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          aria-label={`Go to slide ${idx + 1}: ${s.title}`}
-                          onClick={() => setCurrentSlide(idx)}
-                          className={`h-1.5 rounded-full transition-all ${
-                            idx === currentSlide
-                              ? 'w-7 bg-[#EAB308]'
-                              : 'w-2 bg-white/25 hover:bg-white/50'
-                          }`}
-                        />
-                      ))}
-                    </div>
+                    {(slide.title || slide.caption || slide.tag || slide.dateLabel || activeHomeSlides.length > 1) && (
+                      <div className="p-4 sm:p-5 bg-[#0A110D]/95 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          {(slide.tag || slide.dateLabel) && (
+                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono-tabular text-neutral-400">
+                              {slide.tag && (
+                                <span className="text-[#EAB308] font-semibold">{slide.tag}</span>
+                              )}
+                              {slide.tag && slide.dateLabel && <span aria-hidden="true">·</span>}
+                              {slide.dateLabel && <span>{slide.dateLabel}</span>}
+                            </div>
+                          )}
+                          {slide.title && (
+                            <h2
+                              className="text-lg sm:text-xl font-extrabold text-white font-display uppercase tracking-wide"
+                              style={{ textWrap: 'balance' }}
+                            >
+                              {slide.title}
+                            </h2>
+                          )}
+                          {slide.caption && (
+                            <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed">
+                              {slide.caption}
+                            </p>
+                          )}
+                        </div>
+
+                        {activeHomeSlides.length > 1 && (
+                          <div className="flex items-center gap-2 shrink-0 self-center sm:self-auto">
+                            {activeHomeSlides.map((s, idx) => (
+                              <button
+                                key={s.id}
+                                type="button"
+                                aria-label={`Go to slide ${idx + 1}: ${s.title || 'Team Photo'}`}
+                                onClick={() => setCurrentSlide(idx)}
+                                className={`h-1.5 rounded-full transition-all ${
+                                  idx === currentSlide
+                                    ? 'w-7 bg-[#EAB308]'
+                                    : 'w-2 bg-white/25 hover:bg-white/50'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -1103,8 +1127,6 @@ export default function App() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-neutral-400 font-mono-tabular pt-1">
-                  <span>6 Highland Ct, Morris Plains, NJ 07950</span>
-                  <span aria-hidden="true">·</span>
                   <a
                     href="mailto:matthew@gswarriorshockey.com"
                     className="text-[#EAB308] hover:underline"
@@ -1120,13 +1142,13 @@ export default function App() {
                   {MILITARY_BRANCHES.map((b) => (
                     <div
                       key={b.id}
-                      className="bg-[#080E0B] border border-white/[0.08] rounded-xl p-3 flex flex-col items-center justify-center text-center"
+                      className="bg-[#080E0B] border border-white/[0.08] rounded-xl p-3 flex flex-col items-center justify-center text-center gap-1.5"
                     >
-                      <Shield className="w-5 h-5 text-[#EAB308] mb-1" />
+                      <MilitaryBranchCrest branchId={b.id} className="w-11 h-11" />
                       <span className="text-xs font-bold text-white font-display uppercase tracking-wider">
                         {b.name}
                       </span>
-                      <span className="text-[10px] text-neutral-400 mt-0.5">{b.motto}</span>
+                      <span className="text-[10px] text-neutral-400">{b.motto}</span>
                     </div>
                   ))}
                 </div>
@@ -1324,7 +1346,7 @@ export default function App() {
                     Garden State Disabled Veterans Hockey Club Inc. (operating as Garden State Warriors Hockey Club)
                   </p>
                   <p className="font-mono-tabular text-neutral-400">
-                    501(c)(3) Public Charity · Federal EIN: 43-2191074 · 6 Highland Ct, Morris Plains, NJ 07950 ·{' '}
+                    501(c)(3) Public Charity · Federal EIN: 43-2191074 ·{' '}
                     <a href="mailto:matthew@gswarriorshockey.com" className="text-[#EAB308] hover:underline">
                       matthew@gswarriorshockey.com
                     </a>
@@ -2346,7 +2368,6 @@ export default function App() {
                   501(c)(3) Public Charity · Federal EIN: 43-2191074
                 </p>
                 <p className="text-neutral-400 font-mono-tabular">
-                  6 Highland Ct, Morris Plains, NJ 07950 ·{' '}
                   <a
                     href="mailto:matthew@gswarriorshockey.com"
                     className="text-[#EAB308] hover:underline"
@@ -2373,7 +2394,7 @@ export default function App() {
               <img
                 src={TEAM_LOGOS.greenGoldCrest}
                 alt="Garden State Warriors Primary Logo"
-                className="w-11 h-11 object-contain"
+                className="w-11 h-11 object-contain rounded-full"
                 referrerPolicy="no-referrer"
               />
               <img
@@ -2396,8 +2417,6 @@ export default function App() {
                 <span>Federal EIN: 43-2191074</span>
               </div>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-neutral-400 font-mono-tabular">
-                <span>6 Highland Ct, Morris Plains, NJ 07950</span>
-                <span aria-hidden="true">·</span>
                 <a
                   href="mailto:matthew@gswarriorshockey.com"
                   className="text-[#EAB308] hover:underline"

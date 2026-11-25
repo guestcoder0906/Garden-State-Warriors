@@ -120,6 +120,15 @@ export interface ClubEvent {
   isPlaceholder?: boolean;
 }
 
+export interface HomeSlide {
+  id: string;
+  title: string;
+  caption: string;
+  imageUrl?: string;
+  tag?: string;
+  dateLabel?: string;
+}
+
 /**
  * Extracts a clean Google Spreadsheet ID from either a full Google Sheets URL or a raw ID string.
  */
@@ -608,6 +617,7 @@ export function parseSheetRowsToEvents(
   const idxDesc = findCol(['description', 'details', 'bio', 'info']);
   const idxImg = findCol(['flyerurl', 'imageurl', 'photourl', 'flyer', 'image', 'photo', 'banner']);
   const idxUrl = findCol(['externalurl', 'url', 'link']);
+  const idxPast = findCol(['pastevent', 'past', 'ispast', 'moveToPast'.toLowerCase(), 'completed']);
   const idxStatus = findCol(['status', 'state', 'eventstatus', 'archived']);
 
   const events: ClubEvent[] = [];
@@ -630,12 +640,14 @@ export function parseSheetRowsToEvents(
     const description = getCell(idxDesc);
     const imageUrl = normalizeSheetImageUrl(getCell(idxImg)) || undefined;
     const externalUrl = getCell(idxUrl) || undefined;
+    const pastCheckbox = idxPast >= 0 && isSheetCheckmarkTrue(row[idxPast]);
     const status = getCell(idxStatus) || undefined;
 
     if (!title && !date && !time && !location && !category && !description && !imageUrl) continue;
 
     const markedPast =
       mode === 'PastTab' ||
+      pastCheckbox ||
       /\b(past|completed|archived|deleted|ended|finished)\b/i.test(`${status || ''} ${category}`);
 
     events.push({
@@ -655,6 +667,52 @@ export function parseSheetRowsToEvents(
     });
   }
   return events;
+}
+
+/**
+ * Parses a "Home Slides" (or "Hero Slides" / "Team Photos" / "Slides") tab from the Google Sheet.
+ * Supports Title | Caption | ImageUrl | Tag | DateLabel (all optional; works with image-only rows too).
+ */
+export function parseSheetRowsToHomeSlides(rows: string[][]): HomeSlide[] {
+  if (!rows || rows.length < 2) return [];
+  const normHeaders = rows[0].map(normalizeHeaderKey);
+  const findCol = (keys: string[]) => {
+    const exactIdx = normHeaders.findIndex((h) => keys.includes(h));
+    if (exactIdx >= 0) return exactIdx;
+    return normHeaders.findIndex((h) => keys.some((k) => h.includes(k)));
+  };
+
+  const idxTitle = findCol(['title', 'headline', 'name', 'slide']);
+  const idxCaption = findCol(['caption', 'subtitle', 'description', 'details', 'notes']);
+  const idxImg = findCol(['imageurl', 'photourl', 'image', 'photo', 'picture', 'slideimage', 'url']);
+  const idxTag = findCol(['tag', 'handle', 'category', 'label']);
+  const idxDate = findCol(['datelabel', 'date', 'location', 'when']);
+
+  const slides: HomeSlide[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.every((c) => !cleanSheetCell(c))) continue;
+    const getCell = (idx: number) =>
+      idx >= 0 && row[idx] !== undefined ? cleanSheetCell(row[idx]) : '';
+
+    const title = getCell(idxTitle);
+    const caption = getCell(idxCaption);
+    const imageUrl = normalizeSheetImageUrl(getCell(idxImg)) || undefined;
+    const tag = getCell(idxTag) || undefined;
+    const dateLabel = getCell(idxDate) || undefined;
+
+    if (!title && !caption && !imageUrl && !tag && !dateLabel) continue;
+
+    slides.push({
+      id: `sheet-home-slide-${i}`,
+      title,
+      caption,
+      imageUrl,
+      tag,
+      dateLabel,
+    });
+  }
+  return slides;
 }
 
 /**
@@ -847,6 +905,7 @@ export function parseAppsScriptPayload(payload: {
   coaches?: any[];
   events?: any[];
   pastEvents?: any[];
+  homeSlides?: any[];
   fans?: any[];
   sponsors?: any[];
 }): {
@@ -854,6 +913,7 @@ export function parseAppsScriptPayload(payload: {
   staff: StaffMember[];
   events: ClubEvent[];
   pastEvents: ClubEvent[];
+  homeSlides: HomeSlide[];
   eventsTabPresent: boolean;
   fans: FanItem[];
   sponsors: SponsorItem[];
@@ -865,6 +925,7 @@ export function parseAppsScriptPayload(payload: {
   const allStaff: StaffMember[] = [];
   const allEvents: ClubEvent[] = [];
   const allPastEvents: ClubEvent[] = [];
+  const allHomeSlides: HomeSlide[] = [];
   const allFans: FanItem[] = [];
   const allSponsors: SponsorItem[] = [];
   const playerTabsSet = new Set<string>();
@@ -880,6 +941,9 @@ export function parseAppsScriptPayload(payload: {
   );
   const hasDedicatedPastEventsSheet = tabNames.some((t) =>
     /^(past events|past_events|archived events|pastevents)$/i.test(t.trim())
+  );
+  const hasDedicatedHomeSlidesSheet = tabNames.some((t) =>
+    /^(home slides|hero slides|team photos|slides|homeslides)$/i.test(t.trim())
   );
   const hasDedicatedFansSheet = tabNames.some((t) =>
     /^(fans|fan|fan wall|supporters|family)$/i.test(t.trim())
@@ -904,6 +968,8 @@ export function parseAppsScriptPayload(payload: {
       allPastEvents.push(...parseSheetRowsToEvents(rows, 'PastTab'));
     } else if (/^(events|event|schedule|calendar)$/i.test(tabName.trim())) {
       allEvents.push(...parseSheetRowsToEvents(rows, 'DedicatedTab'));
+    } else if (/^(home slides|hero slides|team photos|slides|homeslides)$/i.test(tabName.trim())) {
+      allHomeSlides.push(...parseSheetRowsToHomeSlides(rows));
     } else if (/^(fans|fan|fan wall|supporters|family)$/i.test(tabName.trim())) {
       allFans.push(...parseSheetRowsToFans(rows));
     } else if (/^(sponsors|sponsor|partners)$/i.test(tabName.trim())) {
@@ -964,10 +1030,10 @@ export function parseAppsScriptPayload(payload: {
     }
   }
 
-  // 2. Also support structured arrays (`players`, `board`, `coaches`, `events`, `fans`, `sponsors`) when raw `sheets` 2D arrays are not present
+  // 2. Also support structured arrays (`players`, `board`, `coaches`, `events`, `homeSlides`, `fans`, `sponsors`) when raw `sheets` 2D arrays are not present
   const hasRosterSheetInPayload = tabNames.some(
     (t) =>
-      !/^(board|staff|officers|board and staff|coaches|coach|coaching|coaching staff|events|event|schedule|calendar|fans|fan|fan wall|supporters|family|sponsors|sponsor|partners|become warrior|become a warrior|becomewarrior|warrior applications)$/i.test(
+      !/^(board|staff|officers|board and staff|coaches|coach|coaching|coaching staff|events|event|schedule|calendar|home slides|hero slides|team photos|slides|homeslides|fans|fan|fan wall|supporters|family|sponsors|sponsor|partners|become warrior|become a warrior|becomewarrior|warrior applications)$/i.test(
         t.trim()
       )
   );
@@ -1271,11 +1337,31 @@ export function parseAppsScriptPayload(payload: {
     });
   }
 
+  if (!hasDedicatedHomeSlidesSheet && Array.isArray(payload?.homeSlides)) {
+    payload.homeSlides.forEach((sl: any, i: number) => {
+      const title = cleanSheetCell(sl.title);
+      const caption = cleanSheetCell(sl.caption || sl.subtitle || sl.description);
+      const imageUrl = normalizeSheetImageUrl(sl.imageUrl || sl.photoUrl || sl.image) || undefined;
+      const tag = cleanSheetCell(sl.tag) || undefined;
+      const dateLabel = cleanSheetCell(sl.dateLabel || sl.date) || undefined;
+      if (!title && !caption && !imageUrl && !tag && !dateLabel) return;
+      allHomeSlides.push({
+        id: sl.id || `as-home-slide-${i}`,
+        title,
+        caption,
+        imageUrl,
+        tag,
+        dateLabel,
+      });
+    });
+  }
+
   return {
     players: allPlayers,
     staff: allStaff,
     events: allEvents,
     pastEvents: allPastEvents,
+    homeSlides: allHomeSlides,
     eventsTabPresent: hasDedicatedEventsSheet || hasDedicatedPastEventsSheet || Array.isArray(payload?.events),
     fans: allFans,
     sponsors: allSponsors,
@@ -1330,6 +1416,7 @@ export interface DynamicSyncResult {
   staff: StaffMember[];
   events: ClubEvent[];
   pastEvents?: ClubEvent[];
+  homeSlides?: HomeSlide[];
   eventsTabPresent?: boolean;
   fans: FanItem[];
   sponsors: SponsorItem[];
@@ -1506,11 +1593,33 @@ export function mergeDynamicSyncResults(
   (g.pastEvents || []).forEach(addPastCandidate);
   (a.pastEvents || []).forEach(addPastCandidate);
 
+  // Home Slides: Apps Script sees in-cell CellImage photos even when gviz/tq omits them
+  const gSlides = g.homeSlides || [];
+  const aSlides = a.homeSlides || [];
+  let homeSlides: HomeSlide[] = [];
+  if (appsScriptRes && aSlides.length > 0 && gSlides.length === 0) {
+    homeSlides = aSlides;
+  } else if (gSlides.length > 0) {
+    homeSlides = gSlides.map((gs, idx) => {
+      const match =
+        aSlides.find(
+          (as) =>
+            as.title &&
+            gs.title &&
+            as.title.trim().toLowerCase() === gs.title.trim().toLowerCase()
+        ) || aSlides[idx];
+      return match ? { ...gs, imageUrl: gs.imageUrl || match.imageUrl } : gs;
+    });
+  } else {
+    homeSlides = aSlides;
+  }
+
   return {
     players,
     staff,
     events,
     pastEvents: Array.from(mergedPastMap.values()),
+    homeSlides,
     eventsTabPresent: Boolean(g.eventsTabPresent || a.eventsTabPresent),
     fans,
     sponsors,

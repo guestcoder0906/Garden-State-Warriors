@@ -4,12 +4,13 @@ import {
   FanItem,
   SponsorItem,
   ClubEvent,
+  HomeSlide,
   formatReplaceTag,
 } from '../utils/rosterLogic';
 
 export const TEAM_LOGOS = {
-  greenGoldCrest: '/assets/aistudio/IMG_9744_b7c11861.png',
-  redNjStickCrest: '/assets/aistudio/IMG_9741_aca1b68a.png',
+  greenGoldCrest: '/assets/aistudio/IMG_9960_cf062ecf.PNG',
+  redNjStickCrest: '/assets/aistudio/IMG_9961_92ae1267.PNG',
   instagramScreenshot: '/assets/aistudio/IMG_9669_e858d093.png',
 };
 
@@ -25,59 +26,22 @@ export const SOCIAL_LINKS = {
     'https://www.facebook.com/plugins/page.php?href=https%3A%2F%2Fwww.facebook.com%2Fprofile.php%3Fid%3D61594324051761&tabs=timeline%2Cevents&width=500&height=650&small_header=false&adapt_container_width=true&hide_cover=false&show_facepile=true',
 };
 
-export interface HeroSlide {
-  id: string;
-  title: string;
-  subtitle: string;
-  tag: string;
-  replaceInstruction: string;
-  dateLabel: string;
-}
-
-export const HERO_SLIDE_DECK: HeroSlide[] = [
+export const HERO_SLIDE_DECK: HomeSlide[] = [
   {
-    id: 'slide-1',
-    title: 'Team Photo Slide #1 (Temporary Placeholder)',
-    subtitle: '[Insert caption for Team Photo Slide #1 - text]',
-    tag: 'Slide 01 · @njveteranhockey',
-    replaceInstruction: formatReplaceTag(
-      'team photos from their social media page(s) (@njveteranhockey on Instagram / Facebook)',
-      'images'
-    ),
-    dateLabel: 'Garden State Warriors',
+    id: 'default-slide-1',
+    title: 'USA Hockey Warrior Classic',
+    caption: 'Garden State Warriors representing New Jersey in Utica, NY.',
+    imageUrl: '/assets/aistudio/IMG_9958_ca063951.JPG',
+    tag: '@njveteranhockey',
+    dateLabel: 'September 24–27, 2026 · Utica, NY',
   },
   {
-    id: 'slide-2',
-    title: 'Team Photo Slide #2 (Temporary Placeholder)',
-    subtitle: '[Insert caption for Team Photo Slide #2 - text]',
-    tag: 'Slide 02 · @njveteranhockey',
-    replaceInstruction: formatReplaceTag(
-      'team photos from their social media page(s) (@njveteranhockey on Instagram / Facebook)',
-      'images'
-    ),
-    dateLabel: 'Garden State Warriors',
-  },
-  {
-    id: 'slide-3',
-    title: 'Team Photo Slide #3 (Temporary Placeholder)',
-    subtitle: '[Insert caption for Team Photo Slide #3 - text]',
-    tag: 'Slide 03 · @njveteranhockey',
-    replaceInstruction: formatReplaceTag(
-      'team photos from their social media page(s) (@njveteranhockey on Instagram / Facebook)',
-      'images'
-    ),
-    dateLabel: 'Garden State Warriors',
-  },
-  {
-    id: 'slide-4',
-    title: 'Team Photo Slide #4 (Temporary Placeholder)',
-    subtitle: '[Insert caption for Team Photo Slide #4 - text]',
-    tag: 'Slide 04 · @njveteranhockey',
-    replaceInstruction: formatReplaceTag(
-      'team photos from their social media page(s) (@njveteranhockey on Instagram / Facebook)',
-      'images'
-    ),
-    dateLabel: 'Garden State Warriors',
+    id: 'default-slide-2',
+    title: 'Garden State Warriors · Arena Brotherhood',
+    caption: 'Veteran teammates united on and off the ice.',
+    imageUrl: '/assets/aistudio/IMG_9959_e6fb42e2.jpg',
+    tag: '@njveteranhockey',
+    dateLabel: 'New Jersey',
   },
 ];
 

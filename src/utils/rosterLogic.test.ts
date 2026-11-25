@@ -6,6 +6,7 @@ import {
   formatReplaceTag,
   parseSheetRowsToPlayers,
   parseSheetRowsToSponsors,
+  parseSheetRowsToHomeSlides,
   parseAppsScriptPayload,
   filterPlayers,
   isValidWebsiteUrl,
@@ -482,6 +483,42 @@ test('parseEventEndDate, isEventPast, and splitAndSortEvents separate Upcoming v
     ['Deleted Flagged Event', 'Fall Kickoff', 'Summer Skate']
   );
 });
+
+test('Past Event checkbox moves checked event to Past Events and Home Slides parses Google Sheet slide photos', () => {
+  const refNow = new Date(2026, 10, 25, 8, 0, 0); // Nov 25, 2026
+
+  const parsed = parseAppsScriptPayload({
+    sheets: {
+      Events: [
+        ['Title', 'Date', 'Time', 'Location', 'Category', 'Description', 'FlyerUrl', 'ExternalUrl', 'Past Event'],
+        ['Future Tournament', '01/15/2027', '6:00 PM', 'Newark, NJ', 'Tournament', 'Upcoming.', '', '', 'FALSE'],
+        ['Checked Past Game', '12/15/2026', '8:00 PM', 'Morristown, NJ', 'Game', 'Checked manually via checkbox.', '', '', 'TRUE'],
+      ],
+      'Home Slides': [
+        ['Title', 'Caption', 'ImageUrl', 'Tag', 'DateLabel'],
+        ['Utica Warrior Classic', 'Team Championship Photo', 'https://docs.google.com/sheets-images-rt/slide1', '@njveteranhockey', 'Sep 2026'],
+        ['', '', 'https://docs.google.com/sheets-images-rt/slide2', '', ''],
+      ],
+    },
+  });
+
+  const { upcoming, past } = splitAndSortEvents(parsed.events, parsed.pastEvents, refNow, 3);
+  assert.deepEqual(upcoming.map((e) => e.title), ['Future Tournament']);
+  assert.deepEqual(past.map((e) => e.title), ['Checked Past Game']);
+
+  assert.equal(parsed.homeSlides.length, 2);
+  assert.equal(parsed.homeSlides[0].title, 'Utica Warrior Classic');
+  assert.equal(parsed.homeSlides[0].imageUrl, 'https://docs.google.com/sheets-images-rt/slide1');
+  assert.equal(parsed.homeSlides[1].imageUrl, 'https://docs.google.com/sheets-images-rt/slide2');
+
+  const rawSlides = parseSheetRowsToHomeSlides([
+    ['Title', 'Caption', 'ImageUrl'],
+    ['Slide A', 'Caption A', '=IMAGE("https://example.com/a.jpg")'],
+  ]);
+  assert.equal(rawSlides.length, 1);
+  assert.equal(rawSlides[0].imageUrl, 'https://example.com/a.jpg');
+});
+
 
 
 

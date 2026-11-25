@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   ExternalLink,
 } from 'lucide-react';
-import { formatReplaceTag } from '../utils/rosterLogic';
 import { TEAM_LOGOS, MILITARY_BRANCHES } from '../data/seedData';
 import { trackCustomEvent } from '../services/firebaseStorage';
 import { submitWarriorToGoogleSheet } from '../services/googleWorkspace';
@@ -198,12 +197,7 @@ export const BecomeWarriorForm: React.FC<{ onSubmitted?: () => void }> = ({ onSu
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-black/40 border border-[#EAB308]/30 text-xs text-amber-200/90 font-mono-tabular">
-          {formatReplaceTag(
-            'locker room jersey lineup photo (like the Flyers Warriors #26, #24, #34, #76 reference)',
-            'image'
-          )}
-        </div>
+        <hr className="border-white/10" />
 
         {/* Direct Website Player Application Form */}
         <div className="bg-[#0A120E] border border-[#EAB308]/40 rounded-2xl p-6 sm:p-8 space-y-6">

@@ -233,17 +233,6 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                       if (s === 'error') setJerseyFailed(true);
                     }}
                   />
-                  <div className="px-4 py-2.5 bg-black/40 border-t border-white/10 flex items-center justify-between text-xs text-neutral-300">
-                    <span>Garden State Warriors Uniform</span>
-                    <span className="font-mono-tabular text-[#EAB308]">
-                      {[
-                        hasVal(player.jerseyNumber) && `#${player.jerseyNumber}`,
-                        hasVal(player.position) && player.position,
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                    </span>
-                  </div>
                 </div>
               )}
 
@@ -259,12 +248,6 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                       if (s === 'error') setProfileFailed(true);
                     }}
                   />
-                  <div className="px-4 py-2.5 bg-black/40 border-t border-white/10 flex items-center justify-between text-xs text-neutral-300">
-                    <span>Profile Picture</span>
-                    {hasVal(player.name) && (
-                      <span className="font-mono-tabular text-neutral-400">{player.name}</span>
-                    )}
-                  </div>
                 </div>
               )}
 
@@ -280,16 +263,6 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                       if (s === 'error') setMilitaryFailed(true);
                     }}
                   />
-                  <div className="px-4 py-2.5 bg-black/40 border-t border-white/10 flex items-center justify-between text-xs text-neutral-300">
-                    <span>Military Service Photo</span>
-                    {(hasVal(player.rank) || hasVal(player.branch)) && (
-                      <span className="font-mono-tabular text-neutral-400">
-                        {[hasVal(player.rank) && player.rank, hasVal(player.branch) && player.branch]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </span>
-                    )}
-                  </div>
                 </div>
               )}
             </div>
