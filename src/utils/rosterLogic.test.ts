@@ -519,7 +519,44 @@ test('Past Event checkbox moves checked event to Past Events and Home Slides par
   assert.equal(rawSlides[0].imageUrl, 'https://example.com/a.jpg');
 });
 
+test('Unchecking Past Event puts event back in Upcoming Events even if previously in Past Events or dated earlier', () => {
+  const refNow = new Date(2026, 10, 25, 8, 0, 0); // Nov 25, 2026
 
+  const stalePastCache = parseAppsScriptPayload({
+    sheets: {
+      Events: [
+        ['Title', 'Date', 'Time', 'Location', 'Category', 'Description', 'FlyerUrl', 'ExternalUrl', 'Past Event'],
+        ['Toy Drive Game', '09/15/2026', '6:00 PM', 'Toms River, NJ', 'Charity Game', 'Desc', 'https://docs.google.com/sheets-images-rt/toydrive', '', 'TRUE'],
+      ],
+    },
+    pastEvents: [
+      {
+        id: 'event-0',
+        title: 'Toy Drive Game',
+        date: '09/15/2026',
+        location: 'Toms River, NJ',
+        imageUrl: 'https://docs.google.com/sheets-images-rt/toydrive',
+        isPast: true,
+      },
+    ],
+  });
 
+  // Live gviz sees Past Event unchecked (FALSE)
+  const liveUncheckedGviz = parseAppsScriptPayload({
+    sheets: {
+      Events: [
+        ['Title', 'Date', 'Time', 'Location', 'Category', 'Description', 'FlyerUrl', 'ExternalUrl', 'Past Event'],
+        ['Toy Drive Game', '09/15/2026', '6:00 PM', 'Toms River, NJ', 'Charity Game', 'Desc', '', '', 'FALSE'],
+      ],
+    },
+  });
 
+  const merged = mergeDynamicSyncResults(null, liveUncheckedGviz, stalePastCache);
+  assert.ok(merged);
+  assert.equal(merged.pastEvents?.length || 0, 0, 'Unchecked event must be removed from stale pastEvents');
 
+  const { upcoming, past } = splitAndSortEvents(merged.events, merged.pastEvents, refNow, 3);
+  assert.deepEqual(upcoming.map((e) => e.title), ['Toy Drive Game']);
+  assert.equal(upcoming[0].imageUrl, 'https://docs.google.com/sheets-images-rt/toydrive');
+  assert.equal(past.length, 0);
+});

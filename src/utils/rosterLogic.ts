@@ -620,6 +620,8 @@ export function parseSheetRowsToEvents(
   const idxPast = findCol(['pastevent', 'past', 'ispast', 'moveToPast'.toLowerCase(), 'completed']);
   const idxStatus = findCol(['status', 'state', 'eventstatus', 'archived']);
 
+  const hasPastCheckboxCol = idxPast >= 0;
+
   const events: ClubEvent[] = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
@@ -640,15 +642,16 @@ export function parseSheetRowsToEvents(
     const description = getCell(idxDesc);
     const imageUrl = normalizeSheetImageUrl(getCell(idxImg)) || undefined;
     const externalUrl = getCell(idxUrl) || undefined;
-    const pastCheckbox = idxPast >= 0 && isSheetCheckmarkTrue(row[idxPast]);
+    const pastCheckbox = hasPastCheckboxCol && isSheetCheckmarkTrue(row[idxPast]);
     const status = getCell(idxStatus) || undefined;
 
     if (!title && !date && !time && !location && !category && !description && !imageUrl) continue;
 
+    const statusIndicatesPast = /\b(past|completed|archived|deleted|ended|finished)\b/i.test(
+      `${status || ''} ${category}`
+    );
     const markedPast =
-      mode === 'PastTab' ||
-      pastCheckbox ||
-      /\b(past|completed|archived|deleted|ended|finished)\b/i.test(`${status || ''} ${category}`);
+      mode === 'PastTab' || (hasPastCheckboxCol ? pastCheckbox : statusIndicatesPast);
 
     events.push({
       id: `sheet-event-${mode}-${i}`,
@@ -662,7 +665,7 @@ export function parseSheetRowsToEvents(
       placeholderBanner: '',
       externalUrl,
       status,
-      isPast: markedPast || undefined,
+      isPast: mode === 'PastTab' || hasPastCheckboxCol ? markedPast : markedPast || undefined,
       isPlaceholder: false,
     });
   }
@@ -1248,14 +1251,14 @@ export function parseAppsScriptPayload(payload: {
         placeholderBanner: '',
         externalUrl: externalUrl || undefined,
         status: status || undefined,
-        isPast: Boolean(ev.isPast) || undefined,
+        isPast: typeof ev.isPast === 'boolean' ? ev.isPast : undefined,
         archivedAt: cleanSheetCell(ev.archivedAt) || undefined,
         isPlaceholder: false,
       });
     });
   }
 
-  if (Array.isArray(payload?.pastEvents)) {
+  if (!hasDedicatedEventsSheet && !hasDedicatedPastEventsSheet && Array.isArray(payload?.pastEvents)) {
     payload.pastEvents.forEach((ev: any, i: number) => {
       const title = cleanSheetCell(ev.title);
       const date = cleanSheetCell(ev.date);
@@ -1531,13 +1534,16 @@ export function mergeDynamicSyncResults(
 
   const staff = [...mergeStaffCategory('Board'), ...mergeStaffCategory('Coach')];
 
+  const allEnrichedEvents = [...(a.events || []), ...(a.pastEvents || [])];
   const events = g.events.map((ge, idx) => {
+    const geKey = getEventCanonicalKey(ge);
     const match =
-      a.events.find(
+      allEnrichedEvents.find(
         (ae) =>
-          ae.title &&
-          ge.title &&
-          ae.title.trim().toLowerCase() === ge.title.trim().toLowerCase()
+          (geKey && getEventCanonicalKey(ae) === geKey) ||
+          (ae.title &&
+            ge.title &&
+            ae.title.trim().toLowerCase() === ge.title.trim().toLowerCase())
       ) || a.events[idx];
     return match ? { ...ge, imageUrl: ge.imageUrl || match.imageUrl } : ge;
   });
@@ -1572,11 +1578,18 @@ export function mergeDynamicSyncResults(
 
   const detectedTabs = Array.from(new Set([...g.detectedTabs, ...a.detectedTabs]));
 
-  // Merge server/archived pastEvents without ever putting deleted items back into active `events`
+  // Any event currently active with Past Event unchecked in live g.events must NOT remain in pastEvents
+  const liveUpcomingKeys = new Set(
+    events
+      .filter((ev) => ev.isPast === false)
+      .map((ev) => getEventCanonicalKey(ev) || ev.id)
+  );
+
+  // Merge server/archived pastEvents without ever keeping unchecked events in pastEvents
   const mergedPastMap = new Map<string, ClubEvent>();
   const addPastCandidate = (ev: ClubEvent) => {
     const key = getEventCanonicalKey(ev);
-    if (!key) return;
+    if (!key || liveUpcomingKeys.has(key)) return;
     const existing = mergedPastMap.get(key);
     if (!existing) {
       mergedPastMap.set(key, { ...ev, isPast: true });
@@ -1792,7 +1805,8 @@ export function isEventPast(
   event: ClubEvent,
   referenceNow: Date = new Date()
 ): boolean {
-  if (event.isPast) return true;
+  if (event.isPast === true) return true;
+  if (event.isPast === false) return false;
   if (/\b(past|completed|archived|deleted|ended|finished)\b/i.test(`${event.status || ''} ${event.category || ''}`)) {
     return true;
   }

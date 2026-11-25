@@ -18,7 +18,7 @@ import {
 export type { DynamicSyncResult };
 export { mergeDynamicSyncResults };
 
-const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v12';
+const SHEET_CACHE_STORAGE_KEY = 'gsw_verified_sheet_cache_v13';
 const LEGACY_CACHE_KEYS = [
   'gsw_known_active_events_v1',
   'gsw_past_events_archive_v1',
@@ -33,6 +33,7 @@ const LEGACY_CACHE_KEYS = [
   'gsw_verified_sheet_cache_v9',
   'gsw_verified_sheet_cache_v10',
   'gsw_verified_sheet_cache_v11',
+  'gsw_verified_sheet_cache_v12',
 ];
 let inMemoryCache: DynamicSyncResult | null = null;
 let inFlightSyncPromise: Promise<DynamicSyncResult | null> | null = null;
