@@ -15,9 +15,13 @@ export interface SheetImageProps {
   onStatusChange?: (status: 'loading' | 'loaded' | 'error') => void;
 }
 
+function isSheetsImagesRtUrl(url: string): boolean {
+  return /^https:\/\/docs\.google\.com\/sheets-images-rt\//i.test(url);
+}
+
 function isGoogleHostedImageUrl(url: string): boolean {
   return (
-    /^https:\/\/docs\.google\.com\/sheets-images-rt\//i.test(url) ||
+    isSheetsImagesRtUrl(url) ||
     /^https:\/\/[^/]*\.googleusercontent\.com\//i.test(url)
   );
 }
@@ -28,15 +32,14 @@ function extractDriveFileIdFromLh3(url: string): string | null {
 }
 
 /**
- * Resilient image renderer for all Google Sheets, CellImage (sheets-images-rt),
+ * Resilient, zero-flicker image renderer for all Google Sheets, CellImage (sheets-images-rt),
  * Firebase Firestore asset, and external media URLs:
- * 1. Resolves Firebase asset URLs (`/api/firebase-image?id=...` or Firestore doc URLs)
- *    100% client-side via Firestore SDK before setting `<img src>`, preventing 404/HTML flashes in dev.
- * 2. Uses `crossOrigin="anonymous"` for `docs.google.com/sheets-images-rt/` and `googleusercontent.com`
- *    so `Cross-Origin-Resource-Policy: same-site` does not block cross-site rendering
- *    (they return `Access-Control-Allow-Origin: *`), with automatic fallback retries.
- * 3. Retries once on transient network glitches and cleanly collapses broken external links
- *    (such as private Drive links) instead of displaying broken-image icons.
+ * 1. Double-buffers image updates: once loaded, keeps displaying the current image cleanly
+ *    while preloading rotated/updated URLs in an offscreen Image object, so background syncs
+ *    NEVER cause loaded images to flash blank or disappear.
+ * 2. Keeps `crossOrigin="anonymous"` for `docs.google.com/sheets-images-rt/` across retries
+ *    (required because Google serves `Cross-Origin-Resource-Policy: same-site` + `ACAO: *`).
+ * 3. Resolves Firebase asset URLs (`/api/firebase-image?id=...`) client-side via Firestore SDK.
  */
 export const SheetImage: React.FC<SheetImageProps> = ({
   src,
@@ -70,6 +73,12 @@ export const SheetImage: React.FC<SheetImageProps> = ({
 
   const attemptRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadedEntityRef = useRef<string>('');
+  const resolvedSrcRef = useRef<string>(resolvedSrc);
+  const statusRef = useRef<'loading' | 'loaded' | 'error'>(status);
+
+  resolvedSrcRef.current = resolvedSrc;
+  statusRef.current = status;
 
   useEffect(() => {
     if (retryTimerRef.current) {
@@ -81,6 +90,7 @@ export const SheetImage: React.FC<SheetImageProps> = ({
     attemptRef.current = 0;
 
     if (!cleanSrc) {
+      loadedEntityRef.current = '';
       setResolvedSrc('');
       setStatus('error');
       onStatusChange?.('error');
@@ -92,9 +102,11 @@ export const SheetImage: React.FC<SheetImageProps> = ({
       const cached = getCachedFirebaseAssetUrl(fbId);
       if (cached) {
         setCorsMode(undefined);
-        setResolvedSrc(cached);
-        setStatus('loading');
-        onStatusChange?.('loading');
+        if (resolvedSrcRef.current !== cached) {
+          setResolvedSrc(cached);
+          setStatus('loading');
+          onStatusChange?.('loading');
+        }
         return;
       }
 
@@ -118,7 +130,44 @@ export const SheetImage: React.FC<SheetImageProps> = ({
       };
     }
 
-    setCorsMode(isGoogleHostedImageUrl(cleanSrc) ? 'anonymous' : undefined);
+    const needsCors = isGoogleHostedImageUrl(cleanSrc);
+
+    // If this component already has a loaded image for the same item (e.g. background sync
+    // rotated a sheets-images-rt signed token or updated the photo), preload offscreen first
+    // so the visible image NEVER disappears or flashes opacity-0!
+    if (
+      statusRef.current === 'loaded' &&
+      resolvedSrcRef.current &&
+      resolvedSrcRef.current !== cleanSrc &&
+      loadedEntityRef.current === alt
+    ) {
+      const preloader = new Image();
+      if (needsCors) preloader.crossOrigin = 'anonymous';
+      preloader.referrerPolicy = referrerPolicy;
+      preloader.onload = () => {
+        if (cancelled) return;
+        setCorsMode(needsCors ? 'anonymous' : undefined);
+        setResolvedSrc(cleanSrc);
+        setStatus('loaded');
+        onStatusChange?.('loaded');
+      };
+      preloader.onerror = () => {
+        // Keep displaying the already-loaded image instead of blanking out if transient error
+      };
+      preloader.src = cleanSrc;
+
+      return () => {
+        cancelled = true;
+        preloader.onload = null;
+        preloader.onerror = null;
+      };
+    }
+
+    if (resolvedSrcRef.current === cleanSrc && statusRef.current === 'loaded') {
+      return;
+    }
+
+    setCorsMode(needsCors ? 'anonymous' : undefined);
     setResolvedSrc(cleanSrc);
     setStatus('loading');
     onStatusChange?.('loading');
@@ -130,9 +179,10 @@ export const SheetImage: React.FC<SheetImageProps> = ({
         retryTimerRef.current = null;
       }
     };
-  }, [cleanSrc]);
+  }, [cleanSrc, alt, referrerPolicy]);
 
   const handleLoad = () => {
+    loadedEntityRef.current = alt;
     setStatus('loaded');
     onStatusChange?.('loaded');
   };
@@ -148,8 +198,8 @@ export const SheetImage: React.FC<SheetImageProps> = ({
       return;
     }
 
-    if (isGoogleHostedImageUrl(cleanSrc)) {
-      // Attempt 0 failed with crossOrigin="anonymous": retry once after brief delay (transient 429/blip)
+    if (isSheetsImagesRtUrl(cleanSrc)) {
+      // Never strip crossOrigin="anonymous" on sheets-images-rt because CORP: same-site requires it.
       if (attempt === 0) {
         retryTimerRef.current = setTimeout(() => {
           setResolvedSrc('');
@@ -157,11 +207,32 @@ export const SheetImage: React.FC<SheetImageProps> = ({
             setCorsMode('anonymous');
             setResolvedSrc(cleanSrc);
           });
-        }, 700);
+        }, 650);
         return;
       }
 
-      // Attempt 1: try without crossOrigin attribute (for CDN edges that don't send ACAO headers)
+      if (attempt === 1) {
+        // Fallback: if resized =s900 failed, try original =s2048 once
+        const origSized = cleanSrc.replace(/=s900(\?|$)/i, '=s2048$1');
+        retryTimerRef.current = setTimeout(() => {
+          setCorsMode('anonymous');
+          setResolvedSrc('');
+          requestAnimationFrame(() => setResolvedSrc(origSized));
+        }, 1200);
+        return;
+      }
+    } else if (isGoogleHostedImageUrl(cleanSrc)) {
+      if (attempt === 0) {
+        retryTimerRef.current = setTimeout(() => {
+          setResolvedSrc('');
+          requestAnimationFrame(() => {
+            setCorsMode('anonymous');
+            setResolvedSrc(cleanSrc);
+          });
+        }, 650);
+        return;
+      }
+
       if (attempt === 1) {
         setCorsMode(undefined);
         setResolvedSrc('');
@@ -169,7 +240,6 @@ export const SheetImage: React.FC<SheetImageProps> = ({
         return;
       }
 
-      // Attempt 2: if Google Drive lh3 URL, try drive thumbnail endpoint once
       const driveId = extractDriveFileIdFromLh3(cleanSrc);
       if (attempt === 2 && driveId) {
         setCorsMode(undefined);
@@ -177,11 +247,10 @@ export const SheetImage: React.FC<SheetImageProps> = ({
         return;
       }
     } else if (attempt === 0) {
-      // Retry generic external image once after transient network error
       retryTimerRef.current = setTimeout(() => {
         setResolvedSrc('');
         requestAnimationFrame(() => setResolvedSrc(cleanSrc));
-      }, 700);
+      }, 650);
       return;
     }
 
@@ -262,14 +331,24 @@ export const PlayerPhotoPair: React.FC<PlayerPhotoPairProps> = ({
   const [profileStatus, setProfileStatus] = useState<'loading' | 'loaded' | 'error'>(
     profilePictureUrl ? 'loading' : 'error'
   );
+  const prevPlayerRef = useRef<string | undefined>(playerName);
 
   useEffect(() => {
-    setJerseyStatus(jerseyPhotoUrl ? 'loading' : 'error');
-  }, [jerseyPhotoUrl]);
+    if (!jerseyPhotoUrl) {
+      setJerseyStatus('error');
+    } else if (prevPlayerRef.current !== playerName || jerseyStatus === 'error') {
+      setJerseyStatus('loading');
+    }
+  }, [jerseyPhotoUrl, playerName]);
 
   useEffect(() => {
-    setProfileStatus(profilePictureUrl ? 'loading' : 'error');
-  }, [profilePictureUrl]);
+    if (!profilePictureUrl) {
+      setProfileStatus('error');
+    } else if (prevPlayerRef.current !== playerName || profileStatus === 'error') {
+      setProfileStatus('loading');
+    }
+    prevPlayerRef.current = playerName;
+  }, [profilePictureUrl, playerName]);
 
   const showJersey = Boolean(jerseyPhotoUrl) && jerseyStatus !== 'error';
   const showProfile = Boolean(profilePictureUrl) && profileStatus !== 'error';
@@ -367,4 +446,3 @@ export const WarriorAvatar: React.FC<WarriorAvatarProps> = ({
     />
   );
 };
-

@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 
 const DEFAULT_SPREADSHEET_ID = '1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s';
+const DEFAULT_APPS_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbyT9GLf7EcrsnEZZVlHDG__39w5g3R9CAXfWsunnJ7uxH2xtk7dg2fjKmaQRlm6weBFgw/exec';
 const CAPTCHA_HMAC_SECRET =
   process.env.CAPTCHA_SECRET_KEY ||
   process.env.RECAPTCHA_SECRET_KEY ||
@@ -109,10 +111,16 @@ export default async function handler(req: any, res: any) {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
 
-  const appsScriptUrl =
+  const configuredScriptUrl =
     process.env.VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL ||
     process.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
     '';
+  const appsScriptUrl =
+    configuredScriptUrl &&
+    configuredScriptUrl.startsWith('https://script.google.com/') &&
+    !configuredScriptUrl.includes('YOUR_')
+      ? configuredScriptUrl
+      : DEFAULT_APPS_SCRIPT_URL;
   const spreadsheetId =
     process.env.VITE_GOOGLE_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID;
 
@@ -221,7 +229,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // 2. Fallback: Fetch the main Roster tab plus optional Events, Board, Coaches, Fans, and Sponsors tabs in parallel
+    // 2. Fallback: Fetch the main Roster tab plus optional Events, Board, Coaches, Fans, Sponsors, and Home Slides tabs in parallel
     const [
       rosterRows,
       eventsRows,
@@ -229,6 +237,7 @@ export default async function handler(req: any, res: any) {
       coachesRows,
       fansRows,
       sponsorsRows,
+      homeSlidesRows,
     ] = await Promise.all([
       fetchGvizSheetTab(spreadsheetId),
       fetchGvizSheetTab(spreadsheetId, 'Events'),
@@ -236,6 +245,7 @@ export default async function handler(req: any, res: any) {
       fetchGvizSheetTab(spreadsheetId, 'Coaches'),
       fetchGvizSheetTab(spreadsheetId, 'Fans'),
       fetchGvizSheetTab(spreadsheetId, 'Sponsors'),
+      fetchGvizSheetTab(spreadsheetId, 'Home Slides'),
     ]);
 
     const sheets: Record<string, string[][]> = {};
@@ -276,6 +286,13 @@ export default async function handler(req: any, res: any) {
       JSON.stringify(sponsorsRows[0]) !== JSON.stringify(rosterRows?.[0])
     ) {
       sheets.Sponsors = sponsorsRows;
+    }
+    if (
+      homeSlidesRows &&
+      homeSlidesRows.length > 0 &&
+      JSON.stringify(homeSlidesRows[0]) !== JSON.stringify(rosterRows?.[0])
+    ) {
+      sheets['Home Slides'] = homeSlidesRows;
     }
 
     if (Object.keys(sheets).length > 0) {

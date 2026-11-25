@@ -1,4 +1,6 @@
 export const VERIFIED_SPREADSHEET_ID = '1-qP7fgEI1mvwjE8cplR9_Rn-9tnHFaBP3beH6ETZC7s';
+export const VERIFIED_APPS_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbyT9GLf7EcrsnEZZVlHDG__39w5g3R9CAXfWsunnJ7uxH2xtk7dg2fjKmaQRlm6weBFgw/exec';
 
 export const EXACT_SHEET_HEADERS = [
   'Last Name',
@@ -220,6 +222,14 @@ export function normalizeSheetImageUrl(val: unknown): string {
   const driveIdParamMatch = candidate.match(/drive\.google\.com\/(?:open|uc|thumbnail)\?[^#]*\bid=([a-zA-Z0-9_-]+)/i);
   if (driveIdParamMatch && driveIdParamMatch[1]) {
     return `https://lh3.googleusercontent.com/d/${driveIdParamMatch[1]}`;
+  }
+
+  // 5. Optimize huge Google Sheets in-cell image URLs (=s2048 -> =s900) for fast page loading
+  if (/^https:\/\/docs\.google\.com\/sheets-images-rt\//i.test(candidate)) {
+    return candidate.replace(/=s(\d+)(\?|$)/i, (_match, sizeStr, suffix) => {
+      const size = Number(sizeStr);
+      return Number.isFinite(size) && size > 900 ? `=s900${suffix}` : `=s${sizeStr}${suffix}`;
+    });
   }
 
   return candidate;

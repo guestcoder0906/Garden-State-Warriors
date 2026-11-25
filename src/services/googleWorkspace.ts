@@ -1,5 +1,6 @@
 import {
   VERIFIED_SPREADSHEET_ID,
+  VERIFIED_APPS_SCRIPT_URL,
   PlayerProfile,
   StaffMember,
   ClubEvent,
@@ -134,6 +135,21 @@ export interface SponsorSubmissionInput {
   captchaToken?: string;
 }
 
+export function getResolvedAppsScriptUrl(): string {
+  const configured =
+    import.meta.env.VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL ||
+    import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
+    '';
+  if (
+    configured &&
+    configured.startsWith('https://script.google.com/') &&
+    !configured.includes('YOUR_')
+  ) {
+    return configured;
+  }
+  return VERIFIED_APPS_SCRIPT_URL;
+}
+
 /**
  * Submits the direct website "Become a Sponsor" form to the Google Sheet (`Sponsors` tab)
  * via Google Apps Script (`doPost`).
@@ -143,10 +159,7 @@ export interface SponsorSubmissionInput {
 export async function submitSponsorToGoogleSheet(
   input: SponsorSubmissionInput
 ): Promise<{ ok: boolean; message: string; uploadedLogoUrl?: string }> {
-  const appsScriptUrl =
-    import.meta.env.VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL ||
-    import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
-    '';
+  const appsScriptUrl = getResolvedAppsScriptUrl();
 
   let finalLogoUrl = (input.logoUrl || '').trim();
   let firebaseAssetId = (input.firebaseAssetId || '').trim();
@@ -273,10 +286,7 @@ export interface WarriorApplicationInput {
 export async function submitWarriorToGoogleSheet(
   input: WarriorApplicationInput
 ): Promise<{ ok: boolean; message: string }> {
-  const appsScriptUrl =
-    import.meta.env.VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL ||
-    import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
-    '';
+  const appsScriptUrl = getResolvedAppsScriptUrl();
 
   const preferredContactStr = Array.isArray(input.preferredContact)
     ? input.preferredContact.join(', ')
@@ -505,7 +515,8 @@ async function fetchDirectGvizAllTabs(spreadsheetId: string): Promise<DynamicSyn
  * Fetches from the Google Apps Script Web App URL (`doGet`) or `/api/sync`.
  */
 async function fetchAppsScriptOrApiPayload(
-  appsScriptUrl: string
+  appsScriptUrl: string,
+  forceNoCache = false
 ): Promise<DynamicSyncResult | null> {
   if (
     appsScriptUrl &&
@@ -514,10 +525,12 @@ async function fetchAppsScriptOrApiPayload(
   ) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
       const separator = appsScriptUrl.includes('?') ? '&' : '?';
-      // Pass nocache=1&_t=... so Apps Script CacheService never serves stale/removed rows
-      const res = await fetch(`${appsScriptUrl}${separator}nocache=1&_t=${Date.now()}`, {
+      // Allow Apps Script CacheService (short 8s TTL, auto-busted by onEdit) on normal loads for speed,
+      // and pass nocache=1 when an immediate manual refresh is requested.
+      const query = forceNoCache ? `nocache=1&_t=${Date.now()}` : `_t=${Date.now()}`;
+      const res = await fetch(`${appsScriptUrl}${separator}${query}`, {
         method: 'GET',
         cache: 'no-store',
         signal: controller.signal,
@@ -537,8 +550,9 @@ async function fetchAppsScriptOrApiPayload(
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-    const apiRes = await fetch(`/api/sync?nocache=1&_t=${Date.now()}`, {
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const apiQuery = forceNoCache ? `nocache=1&_t=${Date.now()}` : `_t=${Date.now()}`;
+    const apiRes = await fetch(`/api/sync?${apiQuery}`, {
       cache: 'no-store',
       signal: controller.signal,
     });
@@ -603,7 +617,8 @@ async function prewarmFirebaseImagesClientSide(result: DynamicSyncResult): Promi
  *   temporarily wipes out in-cell `CellImage` (`sheets-images-rt`) URLs that only Apps Script sees.
  */
 export async function syncVerifiedGoogleSheet(
-  onFastResult?: (fastData: DynamicSyncResult) => void
+  onFastResult?: (fastData: DynamicSyncResult) => void,
+  forceNoCache = false
 ): Promise<DynamicSyncResult | null> {
   if (inFlightSyncPromise) {
     const shared = await inFlightSyncPromise;
@@ -611,10 +626,7 @@ export async function syncVerifiedGoogleSheet(
   }
 
   const run = async (): Promise<DynamicSyncResult | null> => {
-    const appsScriptUrl =
-      import.meta.env.VITE_GOOGLE_APPS_SCRIPT_WEBHOOK_URL ||
-      import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
-      '';
+    const appsScriptUrl = getResolvedAppsScriptUrl();
     const rawSheetId =
       import.meta.env.VITE_GOOGLE_SPREADSHEET_ID || VERIFIED_SPREADSHEET_ID;
     const spreadsheetId = extractSpreadsheetId(rawSheetId) || VERIFIED_SPREADSHEET_ID;
@@ -640,7 +652,7 @@ export async function syncVerifiedGoogleSheet(
       return res;
     });
 
-    const appsScriptPromise = fetchAppsScriptOrApiPayload(appsScriptUrl);
+    const appsScriptPromise = fetchAppsScriptOrApiPayload(appsScriptUrl, forceNoCache);
 
     const [gvizRes, appsScriptRes] = await Promise.all([gvizPromise, appsScriptPromise]);
     mergeCompleted = true;

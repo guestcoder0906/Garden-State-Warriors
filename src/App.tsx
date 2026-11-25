@@ -366,10 +366,10 @@ export default function App() {
       setDynamicTabs(sheetData.detectedTabs);
     };
 
-    const runSync = async () => {
+    const runSync = async (forceNoCache = false) => {
       const sheetData = await syncVerifiedGoogleSheet((fastData) => {
         applySheetData(fastData);
-      });
+      }, forceNoCache);
       if (mounted) {
         if (sheetData) {
           applySheetData(sheetData);
@@ -386,11 +386,11 @@ export default function App() {
       }
     };
 
-    runSync();
-    const interval = setInterval(runSync, 15000);
-    const onFocus = () => runSync();
+    runSync(false);
+    const interval = setInterval(() => runSync(false), 30000);
+    const onFocus = () => runSync(true);
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') runSync();
+      if (document.visibilityState === 'visible') runSync(true);
     };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);

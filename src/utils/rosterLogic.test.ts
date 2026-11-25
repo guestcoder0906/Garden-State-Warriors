@@ -347,6 +347,10 @@ test('normalizeSheetImageUrl and splitMediaUrlsCell handle Firebase server URLs,
     splitMediaUrlsCell('https://example.com/one.jpg, https://drive.google.com/file/d/2abc/view'),
     ['https://example.com/one.jpg', 'https://lh3.googleusercontent.com/d/2abc']
   );
+  assert.equal(
+    normalizeSheetImageUrl('https://docs.google.com/sheets-images-rt/ADdU-xyz=s2048?key=abc123'),
+    'https://docs.google.com/sheets-images-rt/ADdU-xyz=s900?key=abc123'
+  );
 });
 
 test('formatReplaceTag formats missing media and text instructions accurately', () => {
