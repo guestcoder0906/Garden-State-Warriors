@@ -564,3 +564,36 @@ test('Unchecking Past Event puts event back in Upcoming Events even if previousl
   assert.equal(upcoming[0].imageUrl, 'https://docs.google.com/sheets-images-rt/toydrive');
   assert.equal(past.length, 0);
 });
+
+test('mergeDynamicSyncResults safely handles null gvizRes when fallbackCache is present or inputs have missing arrays', () => {
+  const cached = parseAppsScriptPayload({
+    sheets: {
+      'Garden State Warriors Roster': [
+        [...EXACT_SHEET_HEADERS],
+        ['Miller', 'James', '21', 'F', '', 'Army', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ],
+    },
+  });
+
+  // Both appsScriptRes and gvizRes failed (null) while warm cache exists: must not throw Cannot read properties of null
+  const fallbackMerged = mergeDynamicSyncResults(null, null, cached);
+  assert.ok(fallbackMerged);
+  assert.equal(fallbackMerged.players.length, 1);
+  assert.equal(fallbackMerged.players[0].name, 'James Miller');
+
+  // All inputs null
+  assert.equal(mergeDynamicSyncResults(null, null, null), null);
+
+  // Partial/malformed objects with missing array fields
+  const partialMerged = mergeDynamicSyncResults(
+    { players: undefined as any } as any,
+    { players: undefined as any, detectedTabs: undefined as any } as any
+  );
+  assert.ok(partialMerged);
+  assert.deepEqual(partialMerged.players, []);
+  assert.deepEqual(partialMerged.staff, []);
+  assert.deepEqual(partialMerged.events, []);
+  assert.deepEqual(partialMerged.fans, []);
+  assert.deepEqual(partialMerged.sponsors, []);
+});
+

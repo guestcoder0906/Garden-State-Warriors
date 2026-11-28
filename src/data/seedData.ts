@@ -8,12 +8,12 @@ import {
   formatReplaceTag,
 } from '../utils/rosterLogic';
 
-import greenGoldCrestImg from '../assets/green-gold-crest.png';
-import redNjCrestImg from '../assets/red-nj-crest.png';
+import gswLogoPrimaryImg from '../assets/gsw-logo.png';
+import gswLogoOutlinedImg from '../assets/gsw-logo-outlined.png';
 
 export const TEAM_LOGOS = {
-  greenGoldCrest: greenGoldCrestImg,
-  redNjStickCrest: redNjCrestImg,
+  greenGoldCrest: gswLogoPrimaryImg,
+  redNjStickCrest: gswLogoOutlinedImg,
   instagramScreenshot: '/assets/aistudio/IMG_9669_e858d093.png',
 };
 

@@ -587,14 +587,15 @@ async function fetchAppsScriptOrApiPayload(
  * in the client-side in-memory cache while preserving canonical URLs in state & localStorage.
  */
 async function prewarmFirebaseImagesClientSide(result: DynamicSyncResult): Promise<void> {
+  if (!result) return;
   const urlsToWarm: Array<string | undefined> = [
-    ...result.sponsors.map((sp) => sp.logoUrl),
-    ...result.staff.flatMap((st) => [st.photoUrl, st.militaryPhotoUrl]),
-    ...result.fans.map((fn) => fn.photoUrl),
-    ...result.events.map((ev) => ev.imageUrl),
+    ...(result.sponsors || []).map((sp) => sp.logoUrl),
+    ...(result.staff || []).flatMap((st) => [st.photoUrl, st.militaryPhotoUrl]),
+    ...(result.fans || []).map((fn) => fn.photoUrl),
+    ...(result.events || []).map((ev) => ev.imageUrl),
     ...(result.pastEvents || []).map((ev) => ev.imageUrl),
     ...(result.homeSlides || []).map((sl) => sl.imageUrl),
-    ...result.players.flatMap((pl) => [
+    ...(result.players || []).flatMap((pl) => [
       pl.jerseyPhotoUrl,
       pl.profilePictureUrl,
       pl.militaryPhotoUrl,
@@ -634,9 +635,9 @@ export async function syncVerifiedGoogleSheet(
     const existingCache = inMemoryCache || getCachedSheetSyncResult();
     const hasWarmCache = Boolean(
       existingCache &&
-        (existingCache.players.length > 0 ||
-          existingCache.staff.length > 0 ||
-          existingCache.sponsors.length > 0)
+        ((existingCache.players?.length || 0) > 0 ||
+          (existingCache.staff?.length || 0) > 0 ||
+          (existingCache.sponsors?.length || 0) > 0)
     );
 
     let mergeCompleted = false;

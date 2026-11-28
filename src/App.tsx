@@ -528,7 +528,7 @@ export default function App() {
               alt="Instagram @njveteranhockey"
               width={24}
               height={24}
-              className="w-6 h-6 rounded-full object-cover shrink-0 bg-[#050907]"
+              className="w-6 h-6 rounded-full object-contain shrink-0 p-0.5 bg-white"
             />
             <span className="text-xs font-bold text-white font-mono-tabular truncate">
               Live Instagram Feed · {SOCIAL_LINKS.instagramHandle}
@@ -563,7 +563,7 @@ export default function App() {
               alt="Facebook Garden State Warriors"
               width={24}
               height={24}
-              className="w-6 h-6 rounded-full object-cover shrink-0 border border-[#EAB308]/35 bg-[#050907]"
+              className="w-6 h-6 rounded-full object-contain shrink-0 p-0.5 bg-white border border-[#EAB308]/40"
             />
             <span className="text-xs font-bold text-white font-mono-tabular truncate">
               Facebook · Posts & Events
@@ -607,8 +607,9 @@ export default function App() {
                 <img
                   src={TEAM_LOGOS.redNjStickCrest}
                   alt="Garden State Warriors Facebook"
-                  className="w-12 h-12 rounded-full object-contain border border-white/15"
-                  referrerPolicy="no-referrer"
+                  width={48}
+                  height={48}
+                  className="w-12 h-12 rounded-full object-contain shrink-0 p-1 bg-white border border-white/20"
                 />
                 <div>
                   <h3 className="text-base font-bold text-white font-display uppercase">
@@ -676,7 +677,7 @@ export default function App() {
               width={36}
               height={36}
               loading="eager"
-              className="w-8 h-8 sm:w-9 sm:h-9 object-cover rounded-full shrink-0 border border-[#EAB308]/40 bg-[#050907] transition-transform duration-200 group-hover:scale-105"
+              className="w-8 h-8 sm:w-9 sm:h-9 object-contain rounded-full shrink-0 p-0.5 bg-white border border-[#EAB308]/50 transition-transform duration-200 group-hover:scale-105"
             />
             <span className="text-[13px] sm:text-base xl:text-lg font-extrabold tracking-wide sm:tracking-wider text-white font-display uppercase truncate">
               Garden State Warriors
@@ -932,30 +933,30 @@ export default function App() {
             {/* Dual Crest Team Header Banner (Side-by-side crests on mobile, 3-col on md+) */}
             <section className="relative rounded-2xl bg-gradient-to-b from-[#112017] via-[#0C1610] to-[#09100C] border border-white/10 p-5 sm:p-8 shadow-2xl">
               <div className="grid grid-cols-2 md:grid-cols-12 gap-4 sm:gap-6 items-center">
-                {/* Left Official Crest: Green & Gold */}
+                {/* Left Official Crest */}
                 <div className="col-span-1 md:col-span-3 order-1 flex justify-end md:justify-start">
-                  <div className="p-1.5 sm:p-2 rounded-full bg-[#070C09] border border-[#EAB308]/40 shadow-lg shrink-0">
+                  <div className="p-1.5 sm:p-2 rounded-full bg-white border-2 border-[#EAB308]/60 shadow-lg shrink-0">
                     <img
                       src={TEAM_LOGOS.greenGoldCrest}
-                      alt="Garden State Warriors Veterans Hockey Club Est. 2026 Crest"
+                      alt="Garden State Warriors Primary Logo"
                       width={112}
                       height={112}
                       loading="eager"
-                      className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 object-cover rounded-full shrink-0 bg-[#050907]"
+                      className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 object-contain shrink-0"
                     />
                   </div>
                 </div>
 
-                {/* Right Official Crest: Red NJ Silhouette & Crossed Sticks */}
+                {/* Right Official Crest (Outlined Variant) */}
                 <div className="col-span-1 md:col-span-3 order-2 md:order-3 flex justify-start md:justify-end">
-                  <div className="p-1.5 sm:p-2 rounded-full bg-[#070C09] border border-[#991B1B]/60 shadow-lg shrink-0">
+                  <div className="p-1.5 sm:p-2 rounded-full bg-white border-2 border-[#991B1B]/70 shadow-lg shrink-0">
                     <img
                       src={TEAM_LOGOS.redNjStickCrest}
-                      alt="Garden State Warriors NJ Stick Logo"
+                      alt="Garden State Warriors Outlined Logo"
                       width={112}
                       height={112}
                       loading="eager"
-                      className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 object-cover rounded-full shrink-0 bg-[#050907]"
+                      className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 object-contain shrink-0"
                     />
                   </div>
                 </div>
@@ -1332,7 +1333,7 @@ export default function App() {
                     alt="Garden State Warriors Crest"
                     width={48}
                     height={48}
-                    className="w-12 h-12 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
+                    className="w-12 h-12 object-contain rounded-full shrink-0 p-1 bg-white border border-[#EAB308]/45"
                   />
                   <div>
                     <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider">
@@ -2129,7 +2130,7 @@ export default function App() {
                   alt="Garden State Warriors Crest"
                   width={48}
                   height={48}
-                  className="w-12 h-12 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
+                  className="w-12 h-12 object-contain rounded-full shrink-0 p-1 bg-white border border-[#EAB308]/45"
                 />
                 <div className="min-w-0">
                   <span className="text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider block">
@@ -2320,14 +2321,14 @@ export default function App() {
                   alt="Garden State Warriors Crest"
                   width={56}
                   height={56}
-                  className="w-14 h-14 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
+                  className="w-14 h-14 object-contain rounded-full shrink-0 p-1 bg-white border border-[#EAB308]/45"
                 />
                 <img
                   src={TEAM_LOGOS.redNjStickCrest}
-                  alt="Garden State Warriors NJ Stick Logo"
+                  alt="Garden State Warriors Outlined Logo"
                   width={56}
                   height={56}
-                  className="w-14 h-14 object-cover rounded-full shrink-0 bg-[#050907]"
+                  className="w-14 h-14 object-contain rounded-full shrink-0 p-1 bg-white border border-[#991B1B]/50"
                 />
               </div>
 
@@ -2411,14 +2412,14 @@ export default function App() {
                 alt="Garden State Warriors Primary Logo"
                 width={44}
                 height={44}
-                className="w-10 h-10 sm:w-11 sm:h-11 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
+                className="w-10 h-10 sm:w-11 sm:h-11 object-contain rounded-full shrink-0 p-1 bg-white border border-[#EAB308]/45"
               />
               <img
                 src={TEAM_LOGOS.redNjStickCrest}
-                alt="Garden State Warriors Secondary Logo"
+                alt="Garden State Warriors Outlined Logo"
                 width={44}
                 height={44}
-                className="w-10 h-10 sm:w-11 sm:h-11 object-cover rounded-full shrink-0 bg-[#050907]"
+                className="w-10 h-10 sm:w-11 sm:h-11 object-contain rounded-full shrink-0 p-1 bg-white border border-[#991B1B]/50"
               />
             </div>
             <div className="space-y-1 min-w-0">

@@ -107,7 +107,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               width={36}
               height={36}
               loading="eager"
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover shrink-0 border border-[#EAB308]/35 bg-[#050907]"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-contain shrink-0 p-0.5 bg-white border border-[#EAB308]/45"
             />
             <div className="min-w-0 flex-1">
               <span className="text-[10px] sm:text-[11px] text-[#EAB308] font-mono-tabular uppercase tracking-wider block truncate">
@@ -381,14 +381,14 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   alt="Garden State Warriors Crest"
                   width={40}
                   height={40}
-                  className="w-10 h-10 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
+                  className="w-10 h-10 object-contain rounded-full shrink-0 p-1 bg-white border border-[#EAB308]/45"
                 />
                 <img
                   src={TEAM_LOGOS.redNjStickCrest}
-                  alt="Warriors Secondary Logo"
+                  alt="Warriors Outlined Logo"
                   width={40}
                   height={40}
-                  className="w-10 h-10 object-cover rounded-full shrink-0 bg-[#050907]"
+                  className="w-10 h-10 object-contain rounded-full shrink-0 p-1 bg-white border border-[#991B1B]/50"
                 />
               </div>
               <div className="min-w-0">

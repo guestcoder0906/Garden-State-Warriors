@@ -149,14 +149,14 @@ export const BecomeWarriorForm: React.FC<{ onSubmitted?: () => void }> = ({ onSu
               alt="Garden State Warriors Crest"
               width={56}
               height={56}
-              className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-full shrink-0 border border-[#EAB308]/35 bg-[#050907]"
+              className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-full shrink-0 p-1 bg-white border border-[#EAB308]/45"
             />
             <img
               src={TEAM_LOGOS.redNjStickCrest}
-              alt="Garden State Warriors NJ Stick Logo"
+              alt="Garden State Warriors Outlined Logo"
               width={56}
               height={56}
-              className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-full shrink-0 bg-[#050907]"
+              className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-full shrink-0 p-1 bg-white border border-[#991B1B]/50"
             />
           </div>
         </div>

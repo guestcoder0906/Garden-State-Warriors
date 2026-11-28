@@ -1448,21 +1448,39 @@ export function mergeDynamicSyncResults(
   gvizRes: DynamicSyncResult | null,
   fallbackCache: DynamicSyncResult | null = null
 ): DynamicSyncResult | null {
-  const enrichmentSource = appsScriptRes || fallbackCache;
-  if (!enrichmentSource && !gvizRes) return null;
-  if (appsScriptRes && !gvizRes) return appsScriptRes;
-  if (!enrichmentSource && gvizRes) return gvizRes;
+  if (!gvizRes) {
+    return appsScriptRes || fallbackCache || null;
+  }
 
-  const a = enrichmentSource!;
-  const g = gvizRes!;
+  const enrichmentSource = appsScriptRes || fallbackCache;
+  if (!enrichmentSource) return gvizRes;
+
+  const a = enrichmentSource;
+  const g = gvizRes;
+  const aPlayers = Array.isArray(a.players) ? a.players : [];
+  const gPlayers = Array.isArray(g.players) ? g.players : [];
+  const aStaff = Array.isArray(a.staff) ? a.staff : [];
+  const gStaff = Array.isArray(g.staff) ? g.staff : [];
+  const aEvents = Array.isArray(a.events) ? a.events : [];
+  const gEvents = Array.isArray(g.events) ? g.events : [];
+  const aPastEvents = Array.isArray(a.pastEvents) ? a.pastEvents : [];
+  const gPastEvents = Array.isArray(g.pastEvents) ? g.pastEvents : [];
+  const aFans = Array.isArray(a.fans) ? a.fans : [];
+  const gFans = Array.isArray(g.fans) ? g.fans : [];
+  const aSponsors = Array.isArray(a.sponsors) ? a.sponsors : [];
+  const gSponsors = Array.isArray(g.sponsors) ? g.sponsors : [];
+  const aDetectedTabs = Array.isArray(a.detectedTabs) ? a.detectedTabs : [];
+  const gDetectedTabs = Array.isArray(g.detectedTabs) ? g.detectedTabs : [];
+  const aSlides = Array.isArray(a.homeSlides) ? a.homeSlides : [];
+  const gSlides = Array.isArray(g.homeSlides) ? g.homeSlides : [];
 
   const usedAIndices = new Set<number>();
-  const players: PlayerProfile[] = g.players.map((gp, idx) => {
+  const players: PlayerProfile[] = gPlayers.map((gp, idx) => {
     const gpName = (gp.name || '').trim().toLowerCase();
     let matchIdx = -1;
 
     // 1. Exact index match when name also matches
-    const sameIdxPlayer = a.players[idx];
+    const sameIdxPlayer = aPlayers[idx];
     if (
       sameIdxPlayer &&
       !usedAIndices.has(idx) &&
@@ -1473,14 +1491,14 @@ export function mergeDynamicSyncResults(
 
     // 2. Unclaimed player with matching name (and matching jersey number if present)
     if (matchIdx === -1 && gpName) {
-      matchIdx = a.players.findIndex(
+      matchIdx = aPlayers.findIndex(
         (ap, i) =>
           !usedAIndices.has(i) &&
           (ap.name || '').trim().toLowerCase() === gpName &&
           (!gp.jerseyNumber || !ap.jerseyNumber || ap.jerseyNumber === gp.jerseyNumber)
       );
       if (matchIdx === -1) {
-        matchIdx = a.players.findIndex(
+        matchIdx = aPlayers.findIndex(
           (ap, i) => !usedAIndices.has(i) && (ap.name || '').trim().toLowerCase() === gpName
         );
       }
@@ -1488,7 +1506,9 @@ export function mergeDynamicSyncResults(
 
     if (matchIdx === -1) return gp;
     usedAIndices.add(matchIdx);
-    const ap = a.players[matchIdx];
+    const ap = aPlayers[matchIdx];
+    const gpMedia = Array.isArray(gp.mediaGallery) ? gp.mediaGallery : [];
+    const apMedia = Array.isArray(ap.mediaGallery) ? ap.mediaGallery : [];
     return {
       ...gp,
       jerseyPhotoUrl: gp.jerseyPhotoUrl || ap.jerseyPhotoUrl,
@@ -1499,14 +1519,14 @@ export function mergeDynamicSyncResults(
       experience: gp.experience || ap.experience,
       phone: gp.phone || ap.phone,
       email: gp.email || ap.email,
-      mediaGallery: gp.mediaGallery.length > 0 ? gp.mediaGallery : ap.mediaGallery,
+      mediaGallery: gpMedia.length > 0 ? gpMedia : apMedia,
     };
   });
 
   const mergeStaffCategory = (category: 'Board' | 'Coach'): StaffMember[] => {
-    const gList = g.staff.filter((s) => s.category === category);
-    const aList = a.staff.filter((s) => s.category === category);
-    if (gList.length === 0 && aList.length > 0 && !g.detectedTabs.includes(category)) {
+    const gList = gStaff.filter((s) => s.category === category);
+    const aList = aStaff.filter((s) => s.category === category);
+    if (gList.length === 0 && aList.length > 0 && !gDetectedTabs.includes(category)) {
       return aList;
     }
     return gList.map((gs, idx) => {
@@ -1544,8 +1564,8 @@ export function mergeDynamicSyncResults(
 
   const staff = [...mergeStaffCategory('Board'), ...mergeStaffCategory('Coach')];
 
-  const allEnrichedEvents = [...(a.events || []), ...(a.pastEvents || [])];
-  const events = g.events.map((ge, idx) => {
+  const allEnrichedEvents = [...aEvents, ...aPastEvents];
+  const events = gEvents.map((ge, idx) => {
     const geKey = getEventCanonicalKey(ge);
     const match =
       allEnrichedEvents.find(
@@ -1554,39 +1574,39 @@ export function mergeDynamicSyncResults(
           (ae.title &&
             ge.title &&
             ae.title.trim().toLowerCase() === ge.title.trim().toLowerCase())
-      ) || a.events[idx];
+      ) || aEvents[idx];
     return match ? { ...ge, imageUrl: ge.imageUrl || match.imageUrl } : ge;
   });
 
-  const fans = g.fans.map((gf, idx) => {
+  const fans = gFans.map((gf, idx) => {
     const match =
-      a.fans.find(
+      aFans.find(
         (af) =>
           af.title &&
           gf.title &&
           af.title.trim().toLowerCase() === gf.title.trim().toLowerCase()
-      ) || a.fans[idx];
+      ) || aFans[idx];
     return match ? { ...gf, photoUrl: gf.photoUrl || match.photoUrl } : gf;
   });
 
-  const sponsors = g.sponsors.map((gs, idx) => {
-    const sameIdx = a.sponsors[idx];
+  const sponsors = gSponsors.map((gs, idx) => {
+    const sameIdx = aSponsors[idx];
     const match =
       (sameIdx &&
         (sameIdx.name || '').trim().toLowerCase() === (gs.name || '').trim().toLowerCase()
         ? sameIdx
         : undefined) ||
-      a.sponsors.find(
+      aSponsors.find(
         (as) =>
           as.name &&
           gs.name &&
           as.name.trim().toLowerCase() === gs.name.trim().toLowerCase()
       ) ||
-      a.sponsors[idx];
+      aSponsors[idx];
     return match ? { ...gs, logoUrl: gs.logoUrl || match.logoUrl } : gs;
   });
 
-  const detectedTabs = Array.from(new Set([...g.detectedTabs, ...a.detectedTabs]));
+  const detectedTabs = Array.from(new Set([...gDetectedTabs, ...aDetectedTabs]));
 
   // Any event currently active with Past Event unchecked in live g.events must NOT remain in pastEvents
   const liveUpcomingKeys = new Set(
@@ -1613,12 +1633,10 @@ export function mergeDynamicSyncResults(
       });
     }
   };
-  (g.pastEvents || []).forEach(addPastCandidate);
-  (a.pastEvents || []).forEach(addPastCandidate);
+  gPastEvents.forEach(addPastCandidate);
+  aPastEvents.forEach(addPastCandidate);
 
   // Home Slides: Apps Script sees in-cell CellImage photos even when gviz/tq omits them
-  const gSlides = g.homeSlides || [];
-  const aSlides = a.homeSlides || [];
   let homeSlides: HomeSlide[] = [];
   if (appsScriptRes && aSlides.length > 0 && gSlides.length === 0) {
     homeSlides = aSlides;

@@ -139,7 +139,7 @@ export const SponsorsPage: React.FC<SponsorsPageProps> = ({
                 alt="Garden State Warriors Crest"
                 width={44}
                 height={44}
-                className="w-11 h-11 rounded-full object-cover shrink-0 border border-[#EAB308]/35 bg-[#050907]"
+                className="w-11 h-11 rounded-full object-contain shrink-0 p-1 bg-white border border-[#EAB308]/45"
               />
               <div className="min-w-0">
                 <span className="text-xs font-bold text-[#EAB308] font-display uppercase block">
